@@ -1,0 +1,21 @@
+{
+  "name": "fund-manager",
+  "version": "1.0.0",
+  "description": "fund manager",
+  "main": "truffle-config.js",
+  "author": "",
+  "license": "ISC",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts-ethereum-package": "^2.5.0",
+    "@openzeppelin/upgrades": "^2.8.0",
+    "@truffle/hdwallet-provider": "^1.4.1"
+  },
+  "devDependencies": {}
+}
