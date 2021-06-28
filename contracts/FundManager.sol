@@ -22,13 +22,8 @@ contract FundManager is Ownable {
 
     bool public fundDisabled; // Boolean that, if true, disables the primary functionality of this FundManager.
 
-    // 统计提供流动性的量的 erc20 合约
-    address private _fundTokenContract; // Address of the FundToken.
-    // FundToken public fundToken; // Contract of the FundToken.
-
-    // 流动性池的总操控合约
-    address payable private _fundControllerContract; // Address of the FundController.
-    // FundController public fundController;   // Contract of the FundController.
+    address private _fundToken; // 统计提供流动性的量的 erc20 合约, Address of the FundToken.
+    address payable private _fundController; // 流动性池的总操控合约, Address of the FundController.
 
     // 代理合约和旧管理合约，主要用于合约升级
     address private _fundProxyContract; // Address of the FundProxy.
@@ -108,15 +103,13 @@ contract FundManager is Ownable {
     /* ============ 关联合约配置 ============ */
     // 设置资金控制器合约地址 Controller （可接收主网币）
     function setFundController(address payable newContract) external onlyOwner {
-        _fundControllerContract = newContract;
-        // fundController = FundController(_fundControllerContract);
+        _fundController = newContract;
         emit FundControllerSet(newContract);
     }
 
     // 设置流动性代币份额合约地址 FundToken，并设置其合约对象
     function setFundToken(address newContract) external onlyOwner {
-        _fundTokenContract = newContract;
-        // fundToken = FundToken(_fundTokenContract);
+        _fundToken = newContract;
         emit FundTokenSet(newContract);
     }
 
@@ -153,8 +146,8 @@ contract FundManager is Ownable {
         require(amount > 0, "Deposit amount must be greater than 0.");
 
         // Update net deposits, transfer funds from msg.sender, mint BLPT, and emit event
-        IERC20(minerLpToken).safeTransferFrom(msg.sender, _fundControllerContract, amount); // The user must approve the transfer of tokens beforehand
-        require(FundToken(_fundTokenContract).mint(to, amount), "Failed to mint fund tokens.");
+        IERC20(minerLpToken).safeTransferFrom(msg.sender, _fundController, amount); // The user must approve the transfer of tokens beforehand
+        require(FundToken(_fundToken).mint(to, amount), "Failed to mint fund tokens.");
         emit Deposit(msg.sender, to, amount);
     }
 
@@ -167,20 +160,20 @@ contract FundManager is Ownable {
     function getPoolBalance(address minerLpToken) internal view returns (uint256 poolBalance) {
         // TODO 1、fundController添加函数hasTokenInPool，判断池中是否有代币
         //      2、添加cache，临时存储balance的状态
-        (, poolBalance) = FundController(_fundControllerContract).getPoolReward(minerLpToken);
+        (, poolBalance) = FundController(_fundController).getPoolReward(minerLpToken);
     }
 
     // 根据资金控制器合约 Controller 中的资金调用情况进行提现
     function withdrawFromPoolsIfNecessary(address minerLpToken, uint256 amount) internal {
         // Check contract balance of token and withdraw from pools if necessary
-        uint256 contractBalance = IERC20(minerLpToken).balanceOf(_fundControllerContract);
+        uint256 contractBalance = IERC20(minerLpToken).balanceOf(_fundController);
         if (contractBalance >= amount) return; 
 
         uint256 poolBalance = getPoolBalance(minerLpToken);
         uint256 amountLeft = amount.sub(contractBalance);
         bool withdrawAll = amountLeft >= poolBalance;
         uint256 poolAmount = withdrawAll ? poolBalance : amountLeft;
-        FundController(_fundControllerContract).withdrawFromPool(minerLpToken, poolAmount);
+        FundController(_fundController).withdrawFromPool(minerLpToken, poolAmount);
     }
 
     // 按照流动性代币类别进行对应的提现操作
@@ -200,20 +193,20 @@ contract FundManager is Ownable {
 
         // Withdraw reward token from pool
         if (rewardAmount > 0){
-            FundController(_fundControllerContract).rewardFromPool(minerLpToken);
+            FundController(_fundController).rewardFromPool(minerLpToken);
         }
 
         // Calculate withdrawal fee and amount after fee
         uint256 feeAmount = lpAmount.mul(_withdrawalFeeRate).div(1e18);
         uint256 amountAfterFee = lpAmount.sub(feeAmount);
 
-        FundToken(_fundTokenContract).burnFrom(from, lpAmount); // The user must approve the burning of tokens beforehand
+        FundToken(_fundToken).burnFrom(from, lpAmount); // The user must approve the burning of tokens beforehand
         IERC20 lpToken = IERC20(minerLpToken);
-        lpToken.safeTransferFrom(_fundControllerContract, msg.sender, amountAfterFee);
-        lpToken.safeTransferFrom(_fundControllerContract, _withdrawalFeeMasterBeneficiary, feeAmount);
+        lpToken.safeTransferFrom(_fundController, msg.sender, amountAfterFee);
+        lpToken.safeTransferFrom(_fundController, _withdrawalFeeMasterBeneficiary, feeAmount);
         if (rewardAmount > 0){
             IERC20 rewardToken = IERC20(rewardTokenContracts[minerLpToken]);
-            rewardToken.safeTransferFrom(_fundControllerContract, msg.sender, rewardAmount);
+            rewardToken.safeTransferFrom(_fundController, msg.sender, rewardAmount);
         } 
         
         emit Withdrawal(from, msg.sender, lpAmount);
@@ -226,7 +219,7 @@ contract FundManager is Ownable {
     function _withdrawFromPoolByProportion(address from, uint256 amount) internal fundEnabled returns (uint256[] memory) {
         // Input validation
         require(amount > 0, "Withdrawal amount must be greater than 0.");
-        require(amount <= FundToken(_fundTokenContract).balanceOf(from), "Your BLPT balance is less than the withdrawal amount.");
+        require(amount <= FundToken(_fundToken).balanceOf(from), "Your BLPT balance is less than the withdrawal amount.");
 
         // Proportion calculation supportedLpTokenContracts
         uint256[] memory poolLpAmounts = new uint256[](supportedLpTokenContracts.length);
@@ -234,15 +227,15 @@ contract FundManager is Ownable {
         uint256 totalPoolLpAmount = 0;
         for (uint256 i = 0; i < supportedLpTokenContracts.length; i++) {
             address curLpToken = supportedLpTokenContracts[i];
-            (uint256 curRewardAmount, uint256 curLpAmount) = FundController(_fundControllerContract).getPoolReward(curLpToken);
+            (uint256 curRewardAmount, uint256 curLpAmount) = FundController(_fundController).getPoolReward(curLpToken);
 
             // reward token amount
             address curRewardToken = rewardTokenContracts[curLpToken];
-            curRewardAmount = curRewardAmount.add(IERC20(curRewardToken).balanceOf(_fundControllerContract));
+            curRewardAmount = curRewardAmount.add(IERC20(curRewardToken).balanceOf(_fundController));
             poolRewardAmounts[i] = curRewardAmount;
 
             // lp token amount
-            curLpAmount = curLpAmount.add(FundController(_fundControllerContract).getPoolBalance(curLpToken));
+            curLpAmount = curLpAmount.add(FundController(_fundController).getPoolBalance(curLpToken));
             poolLpAmounts[i] = curLpAmount;
             totalPoolLpAmount = totalPoolLpAmount.add(curLpAmount);
         }
