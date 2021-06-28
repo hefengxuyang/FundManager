@@ -121,5 +121,10 @@ module.exports = {
 
   db: {
     enabled: false
-  }
+  },
+
+  // Truffle contract size is used to calculate the specified contract size.
+  plugins: [
+    'truffle-contract-size'
+  ]
 };
