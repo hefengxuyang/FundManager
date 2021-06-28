@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
-// pragma solidity ^0.6.0;
-pragma solidity >=0.5.17;
+pragma solidity ^0.6.0;
 
-import "@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
 import './interfaces/ISwapV2Router.sol';
 
