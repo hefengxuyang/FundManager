@@ -138,7 +138,7 @@ contract FundController is Ownable {
         require(_oldLpContract != address(0) || _newLpContract != address(0), "Invalid LP contract.");
         address oldFactory = contractMigrateFactorys[_oldLpContract];
         address newFactory = contractMigrateFactorys[_newLpContract];
-        (remainAmountA, remainAmountB, newLiquidity) = IMigrator(migrator).migrate(oldFactory, newFactory, _liquidity, _deadline);
+        (remainAmountA, remainAmountB, newLiquidity) = IMigrator(migrator).migrate(oldFactory, newFactory, _oldLpContract, _newLpContract, _liquidity, _deadline);
         emit Rebalance(_liquidity, newLiquidity);
     }
 
