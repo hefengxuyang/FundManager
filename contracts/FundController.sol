@@ -134,11 +134,11 @@ contract FundController is Ownable {
     }
 
     // 挖矿调仓
-    function rebalance(address _oldLpContract, address _newLpContract, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 remainAmountA, uint256 remainAmountB, uint256 newLiquidity) {
+    function rebalance(address _oldLpContract, address _newLpContract, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
         require(_oldLpContract != address(0) || _newLpContract != address(0), "Invalid LP contract.");
         address oldFactory = contractMigrateFactorys[_oldLpContract];
         address newFactory = contractMigrateFactorys[_newLpContract];
-        (remainAmountA, remainAmountB, newLiquidity) = IMigrator(migrator).migrate(oldFactory, newFactory, _oldLpContract, _newLpContract, _liquidity, _deadline);
+        newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldLpContract, _newLpContract, _liquidity, _deadline);
         emit Rebalance(_liquidity, newLiquidity);
     }
 
