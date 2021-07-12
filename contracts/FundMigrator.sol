@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.6.0;
+pragma solidity >=0.6.2;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import '@uniswap/lib/contracts/libraries/TransferHelper.sol';
 
+import './interfaces/ISwapV2Factory.sol';
+import './interfaces/ISwapV2Pair.sol';
 import './interfaces/ISwapV2Router.sol';
 
 /**
@@ -41,23 +44,23 @@ contract FundMigrator {
         return desiredRate;
     }
 
+    // token代币地址排序
+    function sortTokens(address _tokenA, address _tokenB) internal pure returns (address token0, address token1) {
+        require(_tokenA != _tokenB, 'IDENTICAL_ADDRESS');
+        (token0, token1) = _tokenA < _tokenB ? (_tokenA, _tokenB) : (_tokenB, _tokenA);
+        require(token0 != address(0), 'ZERO_ADDRESS');
+    }
+
     // 提取LP代币
     function split(
         address _router, 
         address _tokenA, 
         address _tokenB, 
-        uint256 _liquidity,
-        uint256 _deadline) internal returns (uint256 amountA, uint256 amountB) {
-        require(_router != address(0), "Invalid liquity factory contract.");
-        (amountA, amountB) = ISwapV2Router(_router).removeLiquidity(
-            _tokenA,
-            _tokenB,
-            _liquidity,
-            0,
-            0,
-            msg.sender,
-            _deadline
-        );
+        uint256 _liquidity) internal returns (uint256 amountA, uint256 amountB) {
+        address factory = ISwapV2Router(_router).factory();
+        address pair = ISwapV2Factory(factory).getPair(_tokenA, _tokenB);
+        require(ISwapV2Pair(pair).transferFrom(msg.sender, pair, _liquidity), 'TRANSFER_FROM_FAILED');
+        (amountA, amountB) = ISwapV2Pair(pair).burn(address(this));
         emit Split(amountA, amountB, _liquidity);
     }
     
@@ -69,16 +72,17 @@ contract FundMigrator {
         uint256 _amountADesired,
         uint256 _amountBDesired,
         uint256 _deadline) internal returns (uint256 amountA, uint256 amountB, uint256 liquidity) {
-        require(_router != address(0), "Invalid liquity factory contract.");
-        uint256 amountADesired = _amountADesired.mul(desiredRate).div(1e18);
-        uint256 amountBDesired = _amountBDesired.mul(desiredRate).div(1e18);
+        uint256 minAmountADesired = _amountADesired.mul(desiredRate).div(1e18);
+        uint256 minAmountBDesired = _amountBDesired.mul(desiredRate).div(1e18);
+        TransferHelper.safeApprove(_tokenA, _router, _amountADesired);
+        TransferHelper.safeApprove(_tokenB, _router, _amountBDesired);
         (amountA, amountB, liquidity) = ISwapV2Router(_router).addLiquidity(
             _tokenA,
             _tokenB,
-            amountADesired,
-            amountBDesired,
-            0,
-            0,
+            _amountADesired,
+            _amountBDesired,
+            minAmountADesired,
+            minAmountBDesired,
             msg.sender,
             _deadline
         ); 
@@ -92,26 +96,30 @@ contract FundMigrator {
         address _tokenA, 
         address _tokenB, 
         uint256 _oldLiquidity,
-        uint256 _deadline) external returns (uint256, uint256, uint256) {
+        uint256 _deadline) external returns (uint256) {
+        require(_oldRouter != address(0) && _newRouter != address(0), "ZERO_ADDRESS_FOR_ROUTER");
+        (address tokenA, address tokenB) = sortTokens(_tokenA, _tokenB);
         (uint256 amountA, uint256 amountB) = split(
             _oldRouter,
-            _tokenA,
-            _tokenB,
-            _oldLiquidity,
-            _deadline
+            tokenA,
+            tokenB,
+            _oldLiquidity
         );
-
         (uint256 newAmountA, uint256 newAmountB, uint256 newLiquidity) = compose(
             _newRouter,
-            _tokenA,
-            _tokenB,
+            tokenA,
+            tokenB,
             amountA,
             amountB,
             _deadline
         );
-
-        uint256 remainAmountA = newAmountA > amountA ? newAmountA.sub(amountA) : amountA.sub(newAmountA);
-        uint256 remainAmountB = newAmountB > amountB ? newAmountB.sub(amountB) : amountB.sub(newAmountB);
-        return (remainAmountA, remainAmountB, newLiquidity);
+        if (amountA > newAmountA) {
+            TransferHelper.safeApprove(tokenA, _newRouter, 0); // be a good blockchain citizen, reset allowance to 0
+            TransferHelper.safeTransfer(tokenA, msg.sender, amountA - newAmountA);
+        } else if (amountB > newAmountB) {
+            TransferHelper.safeApprove(tokenB, _newRouter, 0);
+            TransferHelper.safeTransfer(tokenB, msg.sender, amountB - newAmountB);
+        }
+        return newLiquidity;
     }
 }

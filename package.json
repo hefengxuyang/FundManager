@@ -17,6 +17,7 @@
     "@truffle/artifactor": "^4.0.84",
     "@truffle/contract": "^4.2.25",
     "@truffle/hdwallet-provider": "^1.4.1",
+    "@uniswap/lib": "4.0.1-alpha",
     "truffle": "^5.1.65",
     "truffle-contract-size": "^2.0.1",
     "truffle-flattener": "^1.5.0"
