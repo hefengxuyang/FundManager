@@ -156,23 +156,20 @@ contract FundManager is Ownable {
         depositTo(msg.sender, minerLpToken, amount);
     }
 
-    // 查询资金控制器合约 Controller 中对应的流动性代币的余额
-    function getPoolBalance(address minerLpToken) internal view returns (uint256 poolBalance) {
-        // TODO 1、fundController添加函数hasTokenInPool，判断池中是否有代币
-        //      2、添加cache，临时存储balance的状态
-        (, poolBalance) = FundController(_fundController).getPoolReward(minerLpToken);
-    }
-
     // 根据资金控制器合约 Controller 中的资金调用情况进行提现
     function withdrawFromPoolsIfNecessary(address minerLpToken, uint256 amount) internal {
         // Check contract balance of token and withdraw from pools if necessary
         uint256 contractBalance = IERC20(minerLpToken).balanceOf(_fundController);
-        if (contractBalance >= amount) return; 
+        if (contractBalance >= amount) {
+            // 仅仅只提现奖励token
+            FundController(_fundController).withdrawFromPool(minerLpToken, 0);
+            return; 
+        }
 
-        uint256 poolBalance = getPoolBalance(minerLpToken);
+        uint256 poolPrincipal = FundController(_fundController).getPoolPrincipal(minerLpToken);
         uint256 amountLeft = amount.sub(contractBalance);
-        bool withdrawAll = amountLeft >= poolBalance;
-        uint256 poolAmount = withdrawAll ? poolBalance : amountLeft;
+        bool withdrawAll = amountLeft >= poolPrincipal;
+        uint256 poolAmount = withdrawAll ? poolPrincipal : amountLeft;
         FundController(_fundController).withdrawFromPool(minerLpToken, poolAmount);
     }
 
@@ -190,11 +187,6 @@ contract FundManager is Ownable {
 
         // Withdraw from pools if necessary
         withdrawFromPoolsIfNecessary(minerLpToken, lpAmount);
-
-        // Withdraw reward token from pool
-        if (rewardAmount > 0){
-            FundController(_fundController).rewardFromPool(minerLpToken);
-        }
 
         // Calculate withdrawal fee and amount after fee
         uint256 feeAmount = lpAmount.mul(_withdrawalFeeRate).div(1e18);
@@ -227,7 +219,7 @@ contract FundManager is Ownable {
         uint256 totalPoolLpAmount = 0;
         for (uint256 i = 0; i < supportedLpTokenContracts.length; i++) {
             address curLpToken = supportedLpTokenContracts[i];
-            (uint256 curRewardAmount, uint256 curLpAmount) = FundController(_fundController).getPoolReward(curLpToken);
+            uint256 curRewardAmount = FundController(_fundController).getPoolReward(curLpToken);
 
             // reward token amount
             address curRewardToken = rewardTokenContracts[curLpToken];
@@ -235,6 +227,7 @@ contract FundManager is Ownable {
             poolRewardAmounts[i] = curRewardAmount;
 
             // lp token amount
+            uint256 curLpAmount = FundController(_fundController).getPoolPrincipal(curLpToken);
             curLpAmount = curLpAmount.add(FundController(_fundController).getPoolBalance(curLpToken));
             poolLpAmounts[i] = curLpAmount;
             totalPoolLpAmount = totalPoolLpAmount.add(curLpAmount);

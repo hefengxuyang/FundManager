@@ -7,8 +7,8 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
-import "./lib/pools/XPoolController.sol";
-import "./lib/pools/YPoolController.sol";
+import "./lib/pools/BakeryController.sol";
+import "./lib/pools/PancakeController.sol";
 import "./interfaces/IMigrator.sol";
 
 /**
@@ -47,7 +47,6 @@ contract FundController is Ownable {
     event ApproveToPool(address erc20Contract, uint256 amount);
     event DepositToPool(address erc20Contract, uint256 amount);
     event WithdrawFromPool(address erc20Contract, uint256 amount);
-    event RewardFromPool(address erc20Contract);
     event Rebalance(uint256 oldLiquity, uint256 newLiquity);
 
     constructor(address _migrator) public {
@@ -94,8 +93,8 @@ contract FundController is Ownable {
     function approveToPool(address _erc20Contract, uint256 _amount) external onlyRebalancer {
         require(_erc20Contract != address(0), "Invalid LP contract.");
         LiquidityPool pool = contractPools[_erc20Contract];
-        if (pool == LiquidityPool.XPool) XPoolController.approve(_erc20Contract, _amount);
-        else if (pool == LiquidityPool.YPool) YPoolController.approve(_erc20Contract, _amount);
+        if (pool == LiquidityPool.XPool) BakeryController.approve(_erc20Contract, _amount);
+        else if (pool == LiquidityPool.YPool) PancakeController.approve(_erc20Contract, _amount);
         else revert("Invalid pool index.");
         emit ApproveToPool(_erc20Contract, _amount);
     }
@@ -105,8 +104,8 @@ contract FundController is Ownable {
         require(_erc20Contract != address(0), "Invalid LP contract.");
         LiquidityPool pool = contractPools[_erc20Contract];
         uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) XPoolController.deposit(pid, _amount);
-        else if (pool == LiquidityPool.YPool) YPoolController.deposit(pid, _amount);
+        if (pool == LiquidityPool.XPool) BakeryController.deposit(_erc20Contract, _amount);
+        else if (pool == LiquidityPool.YPool) PancakeController.deposit(pid, _amount);
         else revert("Invalid pool index.");
         emit DepositToPool(_erc20Contract, _amount);
     }
@@ -116,21 +115,10 @@ contract FundController is Ownable {
         require(_erc20Contract != address(0), "Invalid LP contract.");
         LiquidityPool pool = contractPools[_erc20Contract];
         uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) XPoolController.withdraw(pid, _amount);
-        else if (pool == LiquidityPool.YPool) YPoolController.withdraw(pid, _amount);
+        if (pool == LiquidityPool.XPool) BakeryController.withdraw(_erc20Contract, _amount);
+        else if (pool == LiquidityPool.YPool) PancakeController.withdraw(pid, _amount);
         else revert("Invalid pool index.");
         emit WithdrawFromPool(_erc20Contract, _amount);
-    }
-
-    // 单独提现流动性代币
-    function rewardFromPool(address _erc20Contract) external onlyRebalancer {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) XPoolController.reward(pid);
-        else if (pool == LiquidityPool.YPool) YPoolController.reward(pid);
-        else revert("Invalid pool index.");
-        emit RewardFromPool(_erc20Contract);
     }
 
     // 挖矿调仓
@@ -145,19 +133,26 @@ contract FundController is Ownable {
     // 查询未投资的流动性代币的余额
     function getPoolBalance(address _erc20Contract) public view returns (uint256) {
         require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        if (pool == LiquidityPool.XPool) return XPoolController.getBalance(_erc20Contract);
-        else if (pool == LiquidityPool.YPool) return YPoolController.getBalance(_erc20Contract);
-        else revert("Invalid pool index.");
+        return IERC20(_erc20Contract).balanceOf(address(this));
     }
 
-    // 查询已投资的奖励金额和存入挖矿的流动性代币数量
-    function getPoolReward(address _erc20Contract) public view returns (uint256, uint256) {
+    // 查询待领取的奖励金额
+    function getPoolReward(address _erc20Contract) public view returns (uint256) {
         require(_erc20Contract != address(0), "Invalid LP contract.");
         LiquidityPool pool = contractPools[_erc20Contract];
         uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) return XPoolController.getReward(pid);
-        else if (pool == LiquidityPool.YPool) return YPoolController.getReward(pid);
+        if (pool == LiquidityPool.XPool) return BakeryController.getReward(_erc20Contract, address(this));
+        else if (pool == LiquidityPool.YPool) return PancakeController.getReward(pid, address(this));
+        else revert("Invalid pool index.");
+    }
+
+    // 查询已存入挖矿的流动性代币本金数量
+    function getPoolPrincipal(address _erc20Contract) public view returns (uint256) {
+        require(_erc20Contract != address(0), "Invalid LP contract.");
+        LiquidityPool pool = contractPools[_erc20Contract];
+        uint256 pid = contractPids[_erc20Contract];
+        if (pool == LiquidityPool.XPool) return BakeryController.getPrincipal(_erc20Contract, address(this));
+        else if (pool == LiquidityPool.YPool) return PancakeController.getPrincipal(pid, address(this));
         else revert("Invalid pool index.");
     }
 
@@ -166,13 +161,13 @@ contract FundController is Ownable {
         uint256 poolUsedAmount = 0;
         uint256 poolReservedAmount = 0;
 
-        (, uint256 xPoolUsedAmount) = XPoolController.getReward(contractPids[X_POOL_CONTRACT]);
-        (, uint256 yPoolUsedAmount) = YPoolController.getReward(contractPids[Y_POOL_CONTRACT]);
+        uint256 xPoolUsedAmount = BakeryController.getPrincipal(X_POOL_CONTRACT, address(this));
+        uint256 yPoolUsedAmount = PancakeController.getPrincipal(contractPids[Y_POOL_CONTRACT], address(this));
         poolUsedAmount = poolUsedAmount.add(xPoolUsedAmount);
         poolUsedAmount = poolUsedAmount.add(yPoolUsedAmount);
 
-        uint256 xPoolReservedAmount = XPoolController.getBalance(X_POOL_CONTRACT);
-        uint256 yPoolReservedAmount = YPoolController.getBalance(Y_POOL_CONTRACT);
+        uint256 xPoolReservedAmount = getPoolBalance(X_POOL_CONTRACT);
+        uint256 yPoolReservedAmount = getPoolBalance(Y_POOL_CONTRACT);
         poolReservedAmount = poolReservedAmount.add(xPoolReservedAmount);
         poolReservedAmount = poolReservedAmount.add(yPoolReservedAmount);
 
@@ -181,8 +176,8 @@ contract FundController is Ownable {
 
     // 查询已投资的各个池的投资占比(优化：结果除以最大公约数)
     function getPoolProportion() public view returns (uint256[] memory) {
-        (, uint256 xPoolUsedAmount) = XPoolController.getReward(contractPids[X_POOL_CONTRACT]);
-        (, uint256 yPoolUsedAmount) = YPoolController.getReward(contractPids[Y_POOL_CONTRACT]);
+        uint256 xPoolUsedAmount = BakeryController.getPrincipal(X_POOL_CONTRACT, address(this));
+        uint256 yPoolUsedAmount = PancakeController.getPrincipal(contractPids[Y_POOL_CONTRACT], address(this));
         uint256[] memory poolUsedAmounts = new uint256[](2);
         poolUsedAmounts[0] = xPoolUsedAmount;
         poolUsedAmounts[1] = yPoolUsedAmount;
