@@ -53,6 +53,7 @@ library PancakeController {
     }
 
     function getPrincipal(uint256 _pid, address _user) external view returns (uint256) {
-        pancakeMaster.userInfo(_pid, _user);
+        (uint256 amount,) = pancakeMaster.userInfo(_pid, _user);
+        return amount;
     }
 }

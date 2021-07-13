@@ -52,6 +52,8 @@ library BakeryController {
     }
 
     function getPrincipal(address _pair, address _user) external view returns (uint256) {
-        bakeryMaster.poolUserInfoMap(_pair, _user);
+        // BakeryMaster.UserInfo storage userInfo = bakeryMaster.poolUserInfoMap[_pair][_user];
+        (uint256 amount,) = bakeryMaster.poolUserInfoMap(_pair, _user);
+        return amount;
     }
 }
