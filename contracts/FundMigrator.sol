@@ -4,9 +4,9 @@ pragma solidity >=0.6.2;
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import '@uniswap/lib/contracts/libraries/TransferHelper.sol';
 
-import './interfaces/ISwapV2Factory.sol';
-import './interfaces/ISwapV2Pair.sol';
-import './interfaces/ISwapV2Router.sol';
+import './interfaces/swap/ISwapV2Factory.sol';
+import './interfaces/swap/ISwapV2Pair.sol';
+import './interfaces/swap/ISwapV2Router.sol';
 
 /**
  * @title FundMigrator
