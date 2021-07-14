@@ -82,8 +82,8 @@ contract FundManagerV2 is Ownable {
         require(newFundManager != address(0), "new FundManager cannot be the zero address.");
         require(_authorizedFundManager != address(0) && msg.sender == _authorizedFundManager, "Caller is not an authorized source.");
         
-        FundManager(newFundManager).setWithdrawalFeeRate(FundManager(_authorizedFundManager).getWithdrawalFeeRate());
-        FundManager(newFundManager).setWithdrawalFeeMasterBeneficiary(FundManager(_authorizedFundManager).getWithdrawalFeeMasterBeneficiary());
+        FundManagerV2(newFundManager).setWithdrawalFeeRate(FundManagerV2(_authorizedFundManager).getWithdrawalFeeRate());
+        FundManagerV2(newFundManager).setWithdrawalFeeMasterBeneficiary(FundManagerV2(_authorizedFundManager).getWithdrawalFeeMasterBeneficiary());
         emit FundManagerUpgraded(newFundManager);
     }
 
