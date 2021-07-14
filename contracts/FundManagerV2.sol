@@ -15,7 +15,7 @@ import "./FundToken.sol";
  * @title FundManager
  * @notice This contract is the primary contract for the minning pool.
  */
-contract FundManager is Ownable {
+contract FundManagerV2 is Ownable {
     using SafeMath for uint256;
     using SignedSafeMath for int256;
     using SafeERC20 for IERC20;
