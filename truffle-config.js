@@ -84,12 +84,15 @@ module.exports = {
       networkCheckTimeout: 100000000
     },
     bsctest: {
-      networkCheckTimeout: 100000000, 
-      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://data-seed-prebsc-1-s1.binance.org:8545/`),
+      networkCheckTimeout: 100000000,
+      // provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, "https://data-seed-prebsc-1-s1.binance.org:8545/"), 
+      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `wss://data-seed-prebsc-1-s1.binance.org:8545`),
       network_id: 97,
+      gas: 30000000,
       confirmations: 10,
-      timeoutBlocks: 2000,
-      skipDryRun: true
+      timeoutBlocks: 200000000,
+      skipDryRun: true,
+      websocket: true
     }
   },
 
@@ -108,7 +111,7 @@ module.exports = {
          enabled: false,
          runs: 200
        },
-       evmVersion: "constantinople"
+       evmVersion: "istanbul"
       }
     }
   },

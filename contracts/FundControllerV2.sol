@@ -38,9 +38,9 @@ contract FundControllerV2 is Ownable {
     mapping(address => address) private pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
     mapping(address => uint256) private pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
 
-    address constant private BAKERY_MASTER_CONTRACT = 0x398eC7346DcD622eDc5ae82352F02bE94C62d119;
-    address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
-    address constant private PANCAKE_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+    address constant private BAKERY_MASTER_CONTRACT = 0xe17cF95Bd55F749ed56c76193AaafF99422b7487;
+    // address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+    address constant private PANCAKE_MASTER_CONTRACT = 0x55fC7a3117107adcAE6C6a5b06E69b99C3fa4113;
 
     event FundGovernanceSet(address newAddress);
     event FundRebalancerSet(address newAddress);
@@ -56,13 +56,13 @@ contract FundControllerV2 is Ownable {
         rebalancer = msg.sender;
         migrator = _migrator;
 
-        addSupportedMaster(BAKERY_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.BakeryPool);
-        addSupportedMaster(MDEX_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.MdexPool);
-        addSupportedMaster(PANCAKE_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.PancakePool);
+        addSupportedMaster(BAKERY_MASTER_CONTRACT, 0x299BA37df581B5f331b0645869DdAEC601070800, LiquidityPool.BakeryPool);
+        // addSupportedMaster(MDEX_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.MdexPool);
+        addSupportedMaster(PANCAKE_MASTER_CONTRACT, 0x1076162c161f78a0495944E1D18220d7222BA44e, LiquidityPool.PancakePool);
 
-        addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, BAKERY_MASTER_CONTRACT, 0);
-        addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 1);
-        addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, PANCAKE_MASTER_CONTRACT, 1);
+        addSupportedPair(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, BAKERY_MASTER_CONTRACT, 0);
+        // addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 1);
+        addSupportedPair(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, PANCAKE_MASTER_CONTRACT, 1);
     }
 
     function addSupportedMaster(address _master, address _factory, LiquidityPool _pool) internal {

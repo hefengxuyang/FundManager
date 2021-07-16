@@ -63,10 +63,10 @@ contract FundManagerV2 is Ownable {
     // 合约初始化
     constructor() public {        
         // TODO: LP代币入池初始化
-        supportedLpTokenContracts.push(0x398eC7346DcD622eDc5ae82352F02bE94C62d119);
-        supportedLpTokenContracts.push(0xe2f2a5C287993345a840Db3B0845fbC70f5935a5);
-        rewardTokenContracts[0x398eC7346DcD622eDc5ae82352F02bE94C62d119] = 0x398eC7346DcD622eDc5ae82352F02bE94C62d119;
-        rewardTokenContracts[0xe2f2a5C287993345a840Db3B0845fbC70f5935a5] = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+        supportedLpTokenContracts.push(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E);
+        supportedLpTokenContracts.push(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f);
+        rewardTokenContracts[0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E] = 0x30B1832c9D519225020debB21a74621b944A2ca7;
+        rewardTokenContracts[0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f] = 0x93cAcdd271DA721640D44bd682cFe74ACD34000d;
     }
 
     /* ============ 升级 FundManager 合约配置 ============ */
