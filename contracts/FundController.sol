@@ -7,9 +7,10 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
-import "./lib/pools/BakeryController.sol";
-import "./lib/pools/PancakeController.sol";
 import "./interfaces/IMigrator.sol";
+import "./interfaces/master/IBakeryMaster.sol";
+import "./interfaces/master/IMdexMaster.sol";
+import "./interfaces/master/IPancakeMaster.sol";
 
 /**
  * @title Fund Controller
@@ -28,17 +29,17 @@ contract FundController is Ownable {
     address public rebalancer;  // 策略调度员地址
     address public migrator;    // 迁移合约地址
 
-    // mapping(address => address) public vaults;      // 机枪池
-    // mapping(address => address) public strategies;  // 策略
-    // mapping(address => mapping(address => bool)) public approvedStrategies; // 策略是否 approved 验证器
+    address[] private supportedPairs;
 
-    enum LiquidityPool { XPool, YPool }
-    mapping(address => LiquidityPool) private contractPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
-    mapping(address => uint256) private contractPids;          // 挖矿流动性合约池和 pid 的映射关系
-    mapping(address => address) private contractMigrateFactorys;          // 挖矿流动性合约池和 pid 的映射关系
+    enum LiquidityPool { BakeryPool, MdexPool, PancakePool }
+    mapping(address => LiquidityPool) private masterPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
+    mapping(address => address) private masterFactorys;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
+    mapping(address => address) private pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
+    mapping(address => uint256) private pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
 
-    address constant private X_POOL_CONTRACT = 0x398eC7346DcD622eDc5ae82352F02bE94C62d119;
-    address constant private Y_POOL_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+    address constant private BAKERY_MASTER_CONTRACT = 0xe17cF95Bd55F749ed56c76193AaafF99422b7487;
+    // address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+    address constant private PANCAKE_MASTER_CONTRACT = 0x55fC7a3117107adcAE6C6a5b06E69b99C3fa4113;
 
     event FundGovernanceSet(address newAddress);
     event FundRebalancerSet(address newAddress);
@@ -54,14 +55,24 @@ contract FundController is Ownable {
         rebalancer = msg.sender;
         migrator = _migrator;
 
-        contractPools[X_POOL_CONTRACT] = LiquidityPool.XPool;
-        contractPools[Y_POOL_CONTRACT] = LiquidityPool.YPool;
-        contractPids[X_POOL_CONTRACT] = 1;
-        contractPids[Y_POOL_CONTRACT] = 1;
+        addSupportedMaster(BAKERY_MASTER_CONTRACT, 0x299BA37df581B5f331b0645869DdAEC601070800, LiquidityPool.BakeryPool);
+        // addSupportedMaster(MDEX_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.MdexPool);
+        addSupportedMaster(PANCAKE_MASTER_CONTRACT, 0x1076162c161f78a0495944E1D18220d7222BA44e, LiquidityPool.PancakePool);
 
-        // 测试合约，根据实际情况是否固定地址
-        contractMigrateFactorys[X_POOL_CONTRACT] = 0x398eC7346DcD622eDc5ae82352F02bE94C62d119;
-        contractMigrateFactorys[Y_POOL_CONTRACT] = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
+        addSupportedPair(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, BAKERY_MASTER_CONTRACT, 0);
+        // addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 1);
+        addSupportedPair(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, PANCAKE_MASTER_CONTRACT, 1);
+    }
+
+    function addSupportedMaster(address _master, address _factory, LiquidityPool _pool) internal {
+        masterFactorys[_master] = _factory;
+        masterPools[_master] = _pool;
+    }
+
+    function addSupportedPair(address _pair, address _master, uint256 _pid) internal {
+        supportedPairs.push(_pair);
+        pairMasters[_pair] = _master;
+        pairPids[_pair] = _pid;
     }
 
     modifier onlyGovernance() {
@@ -80,6 +91,7 @@ contract FundController is Ownable {
     }
 
     function setRebalancer(address _rebalancer) external onlyGovernance {
+        require(rebalancer != _rebalancer, "The same rebalancer.");
         rebalancer = _rebalancer;
         emit FundRebalancerSet(_rebalancer);
     }
@@ -90,97 +102,86 @@ contract FundController is Ownable {
     }
 
     // 管理员操作的approve
-    function approveToPool(address _erc20Contract, uint256 _amount) external onlyRebalancer {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        if (pool == LiquidityPool.XPool) BakeryController.approve(_erc20Contract, _amount);
-        else if (pool == LiquidityPool.YPool) PancakeController.approve(_erc20Contract, _amount);
-        else revert("Invalid pool index.");
-        emit ApproveToPool(_erc20Contract, _amount);
+    function approveToPool(address _pair, uint256 _amount) external onlyGovernance {
+        require(_pair != address(0), "Invalid LP contract.");
+        address master = pairMasters[_pair];
+        require(master != address(0), "Invalid master contract.");
+        IERC20 pairToken = IERC20(_pair);
+        uint256 allowance = pairToken.allowance(address(this), master);
+        if (allowance == _amount) 
+            return;
+
+        if (_amount > 0 && allowance > 0) 
+            pairToken.approve(master, 0);
+
+        pairToken.approve(master, _amount);
+        emit ApproveToPool(_pair, _amount);
     }
 
     // 管理员操作的存储
-    function depositToPool(address _erc20Contract, uint256 _amount) external onlyRebalancer {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) BakeryController.deposit(_erc20Contract, _amount);
-        else if (pool == LiquidityPool.YPool) PancakeController.deposit(pid, _amount);
+    function depositToPool(address _pair, uint256 _amount) external onlyRebalancer {
+        require(_pair != address(0), "Invalid LP contract.");
+        address master = pairMasters[_pair];
+        LiquidityPool pool = masterPools[master];
+        uint256 pid = pairPids[_pair];
+        if (pool == LiquidityPool.BakeryPool) IBakeryMaster(master).deposit(_pair, _amount);
+        else if (pool == LiquidityPool.MdexPool) IMdexMaster(master).deposit(pid, _amount);
+        else if (pool == LiquidityPool.PancakePool) IPancakeMaster(master).deposit(pid, _amount);
         else revert("Invalid pool index.");
-        emit DepositToPool(_erc20Contract, _amount);
+        emit DepositToPool(_pair, _amount);
     }
 
     // 管理员操作的提现
-    function withdrawFromPool(address _erc20Contract, uint256 _amount) external onlyRebalancer {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) BakeryController.withdraw(_erc20Contract, _amount);
-        else if (pool == LiquidityPool.YPool) PancakeController.withdraw(pid, _amount);
+    function withdrawFromPool(address _pair, uint256 _amount) external onlyRebalancer {
+        require(_pair != address(0), "Invalid LP contract.");
+        address master = pairMasters[_pair];
+        LiquidityPool pool = masterPools[master];
+        uint256 pid = pairPids[_pair];
+        if (pool == LiquidityPool.BakeryPool) IBakeryMaster(master).withdraw(_pair, _amount);
+        else if (pool == LiquidityPool.MdexPool) IMdexMaster(master).withdraw(pid, _amount);
+        else if (pool == LiquidityPool.PancakePool) IPancakeMaster(master).withdraw(pid, _amount);
         else revert("Invalid pool index.");
-        emit WithdrawFromPool(_erc20Contract, _amount);
+        emit WithdrawFromPool(_pair, _amount);
     }
 
     // 挖矿调仓
-    function rebalance(address _oldLpContract, address _newLpContract, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
-        require(_oldLpContract != address(0) || _newLpContract != address(0), "Invalid LP contract.");
-        address oldFactory = contractMigrateFactorys[_oldLpContract];
-        address newFactory = contractMigrateFactorys[_newLpContract];
-        newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldLpContract, _newLpContract, _liquidity, _deadline);
+    function rebalance(address _oldPair, address _newPair, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
+        require(_oldPair != address(0) || _newPair != address(0), "Invalid LP contract.");
+        address oldMaster = pairMasters[_oldPair];
+        address newMaster = pairMasters[_newPair];
+        address oldFactory = masterFactorys[oldMaster];
+        address newFactory = masterFactorys[newMaster];
+        newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldPair, _newPair, _liquidity, _deadline);
         emit Rebalance(_liquidity, newLiquidity);
     }
 
     // 查询未投资的流动性代币的余额
-    function getPoolBalance(address _erc20Contract) public view returns (uint256) {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        return IERC20(_erc20Contract).balanceOf(address(this));
+    function getPoolBalance(address _pair) public view returns (uint256) {
+        require(_pair != address(0), "Invalid LP contract.");
+        return IERC20(_pair).balanceOf(address(this));
     }
 
     // 查询待领取的奖励金额
-    function getPoolReward(address _erc20Contract) public view returns (uint256) {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) return BakeryController.getReward(_erc20Contract, address(this));
-        else if (pool == LiquidityPool.YPool) return PancakeController.getReward(pid, address(this));
+    function getPoolReward(address _pair) public view returns (uint256) {
+        require(_pair != address(0), "Invalid LP contract.");
+        address master = pairMasters[_pair];
+        LiquidityPool pool = masterPools[master];
+        uint256 pid = pairPids[_pair];
+        if (pool == LiquidityPool.BakeryPool) return IBakeryMaster(master).pendingBake(_pair, address(this));
+        else if (pool == LiquidityPool.MdexPool) return IMdexMaster(master).pending(pid, address(this));
+        else if (pool == LiquidityPool.PancakePool) return IPancakeMaster(master).pendingCake(pid, address(this));
         else revert("Invalid pool index.");
     }
 
     // 查询已存入挖矿的流动性代币本金数量
-    function getPoolPrincipal(address _erc20Contract) public view returns (uint256) {
-        require(_erc20Contract != address(0), "Invalid LP contract.");
-        LiquidityPool pool = contractPools[_erc20Contract];
-        uint256 pid = contractPids[_erc20Contract];
-        if (pool == LiquidityPool.XPool) return BakeryController.getPrincipal(_erc20Contract, address(this));
-        else if (pool == LiquidityPool.YPool) return PancakeController.getPrincipal(pid, address(this));
+    function getPoolPrincipal(address _pair) public view returns (uint256 amount) {
+        require(_pair != address(0), "Invalid LP contract.");
+        address master = pairMasters[_pair];
+        LiquidityPool pool = masterPools[master];
+        uint256 pid = pairPids[_pair];
+        if (pool == LiquidityPool.BakeryPool) (amount,) = IBakeryMaster(master).poolUserInfoMap(_pair, address(this));
+        else if (pool == LiquidityPool.MdexPool) (amount,) = IMdexMaster(master).userInfo(pid, address(this));
+        else if (pool == LiquidityPool.PancakePool) (amount,) = IPancakeMaster(master).userInfo(pid, address(this));
         else revert("Invalid pool index.");
-    }
-
-    // 查询已投资和未投资的流动性代币的占比(优化：结果除以最大公约数)
-    function getAvailableProportion() public view returns (uint256, uint256) {
-        uint256 poolUsedAmount = 0;
-        uint256 poolReservedAmount = 0;
-
-        uint256 xPoolUsedAmount = BakeryController.getPrincipal(X_POOL_CONTRACT, address(this));
-        uint256 yPoolUsedAmount = PancakeController.getPrincipal(contractPids[Y_POOL_CONTRACT], address(this));
-        poolUsedAmount = poolUsedAmount.add(xPoolUsedAmount);
-        poolUsedAmount = poolUsedAmount.add(yPoolUsedAmount);
-
-        uint256 xPoolReservedAmount = getPoolBalance(X_POOL_CONTRACT);
-        uint256 yPoolReservedAmount = getPoolBalance(Y_POOL_CONTRACT);
-        poolReservedAmount = poolReservedAmount.add(xPoolReservedAmount);
-        poolReservedAmount = poolReservedAmount.add(yPoolReservedAmount);
-
-        return (poolUsedAmount, poolReservedAmount);
-    }
-
-    // 查询已投资的各个池的投资占比(优化：结果除以最大公约数)
-    function getPoolProportion() public view returns (uint256[] memory) {
-        uint256 xPoolUsedAmount = BakeryController.getPrincipal(X_POOL_CONTRACT, address(this));
-        uint256 yPoolUsedAmount = PancakeController.getPrincipal(contractPids[Y_POOL_CONTRACT], address(this));
-        uint256[] memory poolUsedAmounts = new uint256[](2);
-        poolUsedAmounts[0] = xPoolUsedAmount;
-        poolUsedAmounts[1] = yPoolUsedAmount;
-        return poolUsedAmounts;
     }
 }
