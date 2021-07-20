@@ -21,14 +21,13 @@ contract FundToken is ERC20Burnable, Operator {
         return balanceAfter >= balanceBefore;
     }
 
-    function burn(uint256 amount) public override onlyOperator {
+    function burn(uint256 amount) public override {
         super.burn(amount);
     }
 
     function burnFrom(address account, uint256 amount)
         public
         override
-        onlyOperator
     {
         super.burnFrom(account, amount);
     }
