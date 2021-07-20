@@ -16,7 +16,7 @@ contract FundMigrator {
     using SafeMath for uint256;
 
     address public governance;
-    uint256 private desiredRate;
+    uint256 public desiredRate;
 
     event DesiredRateSet(uint256 _rate);
     event Split(uint256 _amountA, uint256 _amountB, uint256 _liquidity);
@@ -31,17 +31,12 @@ contract FundMigrator {
         _;
     }
 
-    // 设置容忍的流动性迁移误差比例（即分子占比，分母固定为1000）
+    // 设置容忍的流动性迁移误差比例（即分子占比，分母固定为10^18）
     function setDesiredRate(uint256 _rate) external onlyGovernance {
         require(_rate != desiredRate, "This is already the current swap desired rate.");
         require(_rate <= 1e18, "The swap desired rate cannot be greater than 100%.");
         desiredRate = _rate;
         emit DesiredRateSet(_rate);
-    }
-
-    // 获取容忍的流动性迁移误差比例
-    function getDesiredRate() public view returns(uint256) {
-        return desiredRate;
     }
 
     // token代币地址排序
