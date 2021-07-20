@@ -22,38 +22,31 @@ contract FundManager is Ownable {
 
     bool public fundDisabled; // Boolean that, if true, disables the primary functionality of this FundManager.
 
-    address private _fundToken; // 统计提供流动性的量的 erc20 合约, Address of the FundToken.
+    address private fundTokenContract; // 统计提供流动性的量的 erc20 合约, Address of the FundToken.
     FundToken public fundToken; // FundToken 合约对象
 
-    address payable private _fundController; // 流动性池的总操控合约, Address of the FundController.
+    address payable private fundControllerContract; // 流动性池的总操控合约, Address of the FundController.
     FundController public fundController;    // FundController 合约对象
 
     // 代理合约和旧管理合约，主要用于合约升级
-    address private _fundProxyContract; // Address of the FundProxy.
-    address private _authorizedFundManager;   // Old FundManager contract authorized to migrate its data to the new one.
+    address private authorizedFundManager;   // Old FundManager contract authorized to migrate its data to the new one.
 
-    address[] private supportedLpTokenContracts;     // Array of the supported lp token contracts
-    mapping(address => address) private rewardTokenContracts;   // map of reward token by mined lp token contract
+    address[] public supportedPairTokenContracts;     // Array of the supported liquity pair token contracts
+    mapping(address => bool) public PairTokenExists;
+    mapping(address => address) public rewardTokenContracts;   // map of reward token by mined liquity pair token contract
     
     // 提现手续费设置（暂不考虑手续费存储手续费）
-    uint256 private _withdrawalFeeRate;    // The current withdrawal fee rate (scaled by 1e18).
-    address private _withdrawalFeeMasterBeneficiary;    // The master beneficiary of withdrawal fees; i.e., the recipient of all withdrawal fees.
+    uint256 public withdrawalFeeRate;    // The current withdrawal fee rate (scaled by 1e18).
+    address public withdrawalFeeMasterBeneficiary;    // The master beneficiary of withdrawal fees; i.e., the recipient of all withdrawal fees.
 
     // 事件 event 
-    event FundManagerUpgraded(address newContract); // Emitted when FundManager is upgraded.
-    event FundControllerSet(address newContract);   // Emitted when the FundController of the FundManager is set or upgraded.
-    event FundTokenSet(address newContract);    // Emitted when the FundToken of the FundManager is set.
-    event FundProxySet(address newContract);    // Emitted when the FundProxy of the FundManager is set.
+    event FundManagerUpgraded(address _newFundManager); // Emitted when FundManager is upgraded.
+    event FundControllerSet(address _fundController);   // Emitted when the FundController of the FundManager is set or upgraded.
+    event FundTokenSet(address _fundToken);    // Emitted when the FundToken of the FundManager is set.
     event FundDisabled();   // Emitted when the primary functionality of this FundManager contract has been disabled.
     event FundEnabled();    // Emitted when the primary functionality of this FundManager contract has been enabled.
-    event Deposit(address indexed sender, address indexed payee, uint256 amount);    // Emitted when funds have been deposited to Controller.
-    event Withdrawal(address indexed sender, address indexed payee, uint256 amount);  // Emitted when funds have been withdrawn from Controller.
-
-
-    modifier onlyProxy() {  // Throws if called by any account other than the FundProxy.
-        require(_fundProxyContract == msg.sender, "Caller is not the FundProxy.");
-        _;
-    }
+    event Deposit(address indexed _sender, address indexed _to, uint256 _amount);    // Emitted when funds have been deposited to Controller.
+    event Withdrawal(address indexed _sender, address indexed _from, uint256 _amount);  // Emitted when funds have been withdrawn from Controller.
 
     modifier fundEnabled() {    // Throws if fund is disabled.
         require(!fundDisabled, "This fund manager contract is disabled. This may be due to an upgrade.");
@@ -62,42 +55,40 @@ contract FundManager is Ownable {
 
     // 合约初始化
     constructor() public {        
-        // TODO: LP代币入池初始化
-        supportedLpTokenContracts.push(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E);
-        supportedLpTokenContracts.push(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f);
-        rewardTokenContracts[0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E] = 0x30B1832c9D519225020debB21a74621b944A2ca7;
-        rewardTokenContracts[0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f] = 0x93cAcdd271DA721640D44bd682cFe74ACD34000d;
+        // 流动性代币入池初始化
+        addSupportedPairToken(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, 0x30B1832c9D519225020debB21a74621b944A2ca7);
+        addSupportedPairToken(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, 0x93cAcdd271DA721640D44bd682cFe74ACD34000d);
+    }
+
+    function addSupportedPairToken(address _pair, address _rewardToken) internal {
+        supportedPairTokenContracts.push(_pair);
+        PairTokenExists[_pair] = true;
+        rewardTokenContracts[_pair] = _rewardToken;
     }
 
     /* ============ 升级 FundManager 合约配置 ============ */
     // 设置认证过的旧版本 FundManager 合约
-    function setAuthorizeFundManager(address newAuthorizedFundManager) external onlyOwner {
-        require(newAuthorizedFundManager != address(0), "new authorizeFundManager cannot be the zero address.");
-        _authorizedFundManager = newAuthorizedFundManager;
+    function setAuthorizeFundManager(address _newAuthorizedFundManager) external onlyOwner {
+        require(_newAuthorizedFundManager != address(0), "new authorizeFundManager cannot be the zero address.");
+        authorizedFundManager = _newAuthorizedFundManager;
     }
 
     // 升级新版本的 FundManager 合约
-    function upgradeFundManager(address newFundManager) external onlyOwner {
+    function upgradeFundManager(address _newFundManager) external onlyOwner {
         require(fundDisabled, "This fund manager contract must be disabled before it can be upgraded.");
-        require(newFundManager != address(0), "new FundManager cannot be the zero address.");
-        require(_authorizedFundManager != address(0) && msg.sender == _authorizedFundManager, "Caller is not an authorized source.");
+        require(_newFundManager != address(0), "new FundManager cannot be the zero address.");
+        require(authorizedFundManager != address(0) && msg.sender == authorizedFundManager, "Caller is not an authorized source.");
         
-        FundManager(newFundManager).setWithdrawalFeeRate(FundManager(_authorizedFundManager).getWithdrawalFeeRate());
-        FundManager(newFundManager).setWithdrawalFeeMasterBeneficiary(FundManager(_authorizedFundManager).getWithdrawalFeeMasterBeneficiary());
-        emit FundManagerUpgraded(newFundManager);
-    }
-
-    // 设置本合约的代理合约，主要用于合约升级
-    function setFundProxy(address newContract) external onlyOwner {
-        _fundProxyContract = newContract;
-        emit FundProxySet(newContract);
+        FundManager(_newFundManager).setWithdrawalFeeRate(FundManager(authorizedFundManager).withdrawalFeeRate());
+        FundManager(_newFundManager).setWithdrawalFeeMasterBeneficiary(FundManager(authorizedFundManager).withdrawalFeeMasterBeneficiary());
+        emit FundManagerUpgraded(_newFundManager);
     }
 
     // 设置本合约是否可用
-    function setFundDisabled(bool disabled) external onlyOwner {
-        require(disabled != fundDisabled, "No change to fund enabled/disabled status.");
-        fundDisabled = disabled;
-        if (disabled) 
+    function setFundDisabled(bool _fundDisabled) external onlyOwner {
+        require(_fundDisabled != fundDisabled, "No change to fund enabled/disabled status.");
+        fundDisabled = _fundDisabled;
+        if (_fundDisabled) 
             emit FundDisabled(); 
         else 
             emit FundEnabled();
@@ -105,149 +96,134 @@ contract FundManager is Ownable {
 
     /* ============ 关联合约配置 ============ */
     // 设置资金控制器合约地址 Controller （可接收主网币）
-    function setFundController(address payable newContract) external onlyOwner {
-        _fundController = newContract;
-        fundController = FundController(_fundController);
-        emit FundControllerSet(newContract);
+    function setFundController(address payable _fundController) external onlyOwner {
+        fundControllerContract = _fundController;
+        fundController = FundController(fundControllerContract);
+        emit FundControllerSet(_fundController);
     }
 
     // 设置流动性代币份额合约地址 FundToken，并设置其合约对象
-    function setFundToken(address newContract) external onlyOwner {
-        _fundToken = newContract;
-        fundToken = FundToken(_fundToken);
-        emit FundTokenSet(newContract);
+    function setFundToken(address _fundToken) external onlyOwner {
+        fundTokenContract = _fundToken;
+        fundToken = FundToken(fundTokenContract);
+        emit FundTokenSet(_fundToken);
     }
 
     /* ============ 提现手续费配置 ============ */
     // 设置提现手续费费率
-    function setWithdrawalFeeRate(uint256 rate) external fundEnabled onlyOwner {
-        require(rate != _withdrawalFeeRate, "This is already the current withdrawal fee rate.");
-        require(rate <= 1e18, "The withdrawal fee rate cannot be greater than 100%.");
-        _withdrawalFeeRate = rate;
-    }
-
-    // 查询提现手续费费率
-    function getWithdrawalFeeRate() public view returns (uint256) {
-        return _withdrawalFeeRate;
+    function setWithdrawalFeeRate(uint256 _rate) external fundEnabled onlyOwner {
+        require(_rate != withdrawalFeeRate, "This is already the current withdrawal fee rate.");
+        require(_rate <= 1e18, "The withdrawal fee rate cannot be greater than 100%.");
+        withdrawalFeeRate = _rate;
     }
 
     // 设置提现手续费的受益人
-    function setWithdrawalFeeMasterBeneficiary(address beneficiary) external fundEnabled onlyOwner {
-        require(beneficiary != address(0), "Master beneficiary cannot be the zero address.");
-        _withdrawalFeeMasterBeneficiary = beneficiary;
-    }
-
-    // 查询提现手续费的受益人
-    function getWithdrawalFeeMasterBeneficiary() public view returns (address) {
-        return _withdrawalFeeMasterBeneficiary;
+    function setWithdrawalFeeMasterBeneficiary(address _beneficiary) external fundEnabled onlyOwner {
+        require(_beneficiary != address(0), "Master beneficiary cannot be the zero address.");
+        withdrawalFeeMasterBeneficiary = _beneficiary;
     }
 
     /* ============ 存储和提现的关键部分 ============ */
     // 存入流动性代币
-    function depositTo(address to, address minerLpToken, uint256 amount) public fundEnabled {
-        // TODO 输入流动性代币地址 minerLpToken，进行可支持的代币地址的验证
-        // Input validation
-        require(minerLpToken != address(0), "Invalid miner LP token.");
-        require(amount > 0, "Deposit amount must be greater than 0.");
+    function depositTo(address _to, address _pair, uint256 _amount) public fundEnabled {
+        require(PairTokenExists[_pair], "Invalid liquity pair token.");
+        require(_amount > 0, "Deposit amount must be greater than 0.");
 
         // Update net deposits, transfer funds from msg.sender, mint BLPT, and emit event
-        IERC20(minerLpToken).safeTransferFrom(msg.sender, _fundController, amount); // The user must approve the transfer of tokens beforehand
-        require(fundToken.mint(to, amount), "Failed to mint fund tokens.");
-        emit Deposit(msg.sender, to, amount);
+        IERC20(_pair).safeTransferFrom(msg.sender, fundControllerContract, _amount); // The user must approve the transfer of tokens beforehand
+        require(fundToken.mint(_to, _amount), "Failed to mint fund tokens.");
+        emit Deposit(msg.sender, _to, _amount);
     }
 
     // 调用者存入流动性代币（调用者用户需要提前 approve 对应的 amount）
-    function deposit(address minerLpToken, uint256 amount) external {
-        depositTo(msg.sender, minerLpToken, amount);
+    function deposit(address _pair, uint256 _amount) external {
+        depositTo(msg.sender, _pair, _amount);
     }
 
     // 根据资金控制器合约 Controller 中的资金调用情况进行提现
-    function withdrawFromPoolsIfNecessary(address minerLpToken, uint256 amount) internal {
+    function withdrawFromPoolsIfNecessary(address _pair, uint256 _amount) internal {
         // Check contract balance of token and withdraw from pools if necessary
-        uint256 contractBalance = IERC20(minerLpToken).balanceOf(_fundController);
-        if (contractBalance >= amount) {
+        uint256 contractBalance = IERC20(_pair).balanceOf(fundControllerContract);
+        if (contractBalance >= _amount) {
             // 仅仅只提现奖励token
-            fundController.withdrawFromPool(minerLpToken, 0);
+            fundController.withdrawFromPool(_pair, 0);
             return; 
         }
 
-        uint256 poolPrincipal = fundController.getPoolPrincipal(minerLpToken);
-        uint256 amountLeft = amount.sub(contractBalance);
+        uint256 poolPrincipal = fundController.getPoolPrincipal(_pair);
+        uint256 amountLeft = _amount.sub(contractBalance);
         bool withdrawAll = amountLeft >= poolPrincipal;
         uint256 poolAmount = withdrawAll ? poolPrincipal : amountLeft;
-        fundController.withdrawFromPool(minerLpToken, poolAmount);
+        fundController.withdrawFromPool(_pair, poolAmount);
     }
 
     // 按照流动性代币类别进行对应的提现操作
-    // - from 调用者用户
-    // - minerLpToken 挖矿的流动性代币合约
-    // - lpAmount 流动性代币份额合约 fundToken 的数量
-    // - rewardAmount 奖励代币数量
-    function _withdrawFrom(address from, address minerLpToken, uint256 lpAmount, uint256 rewardAmount) internal fundEnabled returns (uint256) {
-        // TODO 1、输入流动性代币地址 minerLpToken，进行可支持的代币地址的验证
-        //      2、根据已经在挖矿池中的的代币所占比例进行均衡提现
-        // Input validation
-        require(minerLpToken != address(0), "Invalid currency code.");
-        require(lpAmount > 0, "Withdrawal amount must be greater than 0.");
+    // - _from 调用者用户
+    // - _pair 挖矿的流动性代币合约
+    // - _pairAmount 流动性代币份额合约 fundToken 的数量
+    // - _rewardAmount 奖励代币数量
+    function _withdrawFrom(address _from, address _pair, uint256 _pairAmount, uint256 _rewardAmount) internal fundEnabled returns (uint256) {
+        require(PairTokenExists[_pair], "Invalid currency code.");
+        require(_pairAmount > 0, "Withdrawal amount must be greater than 0.");
 
         // Withdraw from pools if necessary
-        withdrawFromPoolsIfNecessary(minerLpToken, lpAmount);
+        withdrawFromPoolsIfNecessary(_pair, _pairAmount);
 
         // Calculate withdrawal fee and amount after fee
-        uint256 feeAmount = lpAmount.mul(_withdrawalFeeRate).div(1e18);
-        uint256 amountAfterFee = lpAmount.sub(feeAmount);
+        uint256 feeAmount = _pairAmount.mul(withdrawalFeeRate).div(1e18);
+        uint256 amountAfterFee = _pairAmount.sub(feeAmount);
 
-        fundToken.burnFrom(from, lpAmount); // The user must approve the burning of tokens beforehand
-        IERC20 lpToken = IERC20(minerLpToken);
-        lpToken.safeTransferFrom(_fundController, msg.sender, amountAfterFee);
-        lpToken.safeTransferFrom(_fundController, _withdrawalFeeMasterBeneficiary, feeAmount);
-        if (rewardAmount > 0){
-            IERC20 rewardToken = IERC20(rewardTokenContracts[minerLpToken]);
-            rewardToken.safeTransferFrom(_fundController, msg.sender, rewardAmount);
+        fundToken.burnFrom(_from, _pairAmount); // The user must approve the burning of tokens beforehand
+        IERC20 pairToken = IERC20(_pair);
+        pairToken.safeTransferFrom(fundControllerContract, msg.sender, amountAfterFee);
+        pairToken.safeTransferFrom(fundControllerContract, withdrawalFeeMasterBeneficiary, feeAmount);
+        if (_rewardAmount > 0){
+            IERC20 rewardToken = IERC20(rewardTokenContracts[_pair]);
+            rewardToken.safeTransferFrom(fundControllerContract, msg.sender, _rewardAmount);
         } 
         
-        emit Withdrawal(from, msg.sender, lpAmount);
+        emit Withdrawal(msg.sender, _from, _pairAmount);
 
         // Return amount after fee
         return amountAfterFee;
     }
 
     // 根据资金控制器合约 Controller 中的持仓比例进行等比例的本金和收益提现
-    function _withdrawFromPoolByProportion(address from, uint256 amount) internal fundEnabled returns (uint256[] memory) {
+    function _withdrawFromPoolByProportion(address _from, uint256 _amount) internal fundEnabled returns (uint256[] memory) {
         // Input validation
-        require(amount > 0, "Withdrawal amount must be greater than 0.");
-        require(amount <= fundToken.balanceOf(from), "Your BLPT balance is less than the withdrawal amount.");
+        require(_amount > 0, "Withdrawal amount must be greater than 0.");
+        require(_amount <= fundToken.balanceOf(_from), "Your BLPT balance is less than the withdrawal amount.");
 
-        // Proportion calculation supportedLpTokenContracts
-        uint256[] memory poolLpAmounts = new uint256[](supportedLpTokenContracts.length);
-        uint256[] memory poolRewardAmounts = new uint256[](supportedLpTokenContracts.length);
-        uint256 totalPoolLpAmount = 0;
-        for (uint256 i = 0; i < supportedLpTokenContracts.length; i++) {
-            address curLpToken = supportedLpTokenContracts[i];
-            uint256 curRewardAmount = fundController.getPoolReward(curLpToken);
+        // Proportion calculation supportedPairTokenContracts
+        uint256[] memory poolPairAmounts = new uint256[](supportedPairTokenContracts.length);
+        uint256[] memory poolRewardAmounts = new uint256[](supportedPairTokenContracts.length);
+        uint256 totalPoolPairAmount = 0;
+        for (uint256 i = 0; i < supportedPairTokenContracts.length; i++) {
+            address curPairToken = supportedPairTokenContracts[i];
+            uint256 curRewardAmount = fundController.getPoolReward(curPairToken);
 
             // reward token amount
-            address curRewardToken = rewardTokenContracts[curLpToken];
-            curRewardAmount = curRewardAmount.add(IERC20(curRewardToken).balanceOf(_fundController));
+            address curRewardToken = rewardTokenContracts[curPairToken];
+            curRewardAmount = curRewardAmount.add(IERC20(curRewardToken).balanceOf(fundControllerContract));
             poolRewardAmounts[i] = curRewardAmount;
 
-            // lp token amount
-            uint256 curLpAmount = fundController.getPoolPrincipal(curLpToken);
-            curLpAmount = curLpAmount.add(fundController.getPoolBalance(curLpToken));
-            poolLpAmounts[i] = curLpAmount;
-            totalPoolLpAmount = totalPoolLpAmount.add(curLpAmount);
+            // liquity pair token amount
+            uint256 curPairAmount = fundController.getPoolPrincipal(curPairToken);
+            curPairAmount = curPairAmount.add(fundController.getPoolBalance(curPairToken));
+            poolPairAmounts[i] = curPairAmount;
+            totalPoolPairAmount = totalPoolPairAmount.add(curPairAmount);
         }
 
         // validate if the total amount is zero
-        require(totalPoolLpAmount > 0, "Total LP amount is empty.");
+        require(totalPoolPairAmount > 0, "Total LP amount is empty.");
 
-        // withdraw lp token and reward token
-        uint256[] memory amountsAfterFees = new uint256[](supportedLpTokenContracts.length);
-        for (uint256 i = 0; i < poolLpAmounts.length; i++) {
-            uint256 curWithdrawLpAmount = amount.mul(poolLpAmounts[i]).div(totalPoolLpAmount);
-            if (curWithdrawLpAmount == 0) continue;
-            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(poolLpAmounts[i]).div(totalPoolLpAmount);
-            amountsAfterFees[i] = _withdrawFrom(from, supportedLpTokenContracts[i], curWithdrawLpAmount, curWithdrawRewardAmount);
+        // withdraw liquity pair token and reward token
+        uint256[] memory amountsAfterFees = new uint256[](supportedPairTokenContracts.length);
+        for (uint256 i = 0; i < poolPairAmounts.length; i++) {
+            uint256 curWithdrawPairAmount = _amount.mul(poolPairAmounts[i]).div(totalPoolPairAmount);
+            if (curWithdrawPairAmount == 0) continue;
+            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(poolPairAmounts[i]).div(totalPoolPairAmount);
+            amountsAfterFees[i] = _withdrawFrom(_from, supportedPairTokenContracts[i], curWithdrawPairAmount, curWithdrawRewardAmount);
         }
 
         // Return amounts after fees
@@ -255,16 +231,16 @@ contract FundManager is Ownable {
     }
 
     // 调用者根据自己拥有的流动性代币份额（fundToken）进行提现操作
-    function withdraw(uint256 amount) external returns (uint256[] memory) {
-        return _withdrawFromPoolByProportion(msg.sender, amount);
+    function withdraw(uint256 _amount) external returns (uint256[] memory) {
+        return _withdrawFromPoolByProportion(msg.sender, _amount);
     }
 
     // 转出基金经理丢失的流动性代币，以防意外操作将资金转移到本合约
-    function forwardLostFunds(address minerLpToken, address to) external onlyOwner returns (bool) {
-        IERC20 token = IERC20(minerLpToken);
+    function forwardLostFunds(address _token, address _to) external onlyOwner returns (bool) {
+        IERC20 token = IERC20(_token);
         uint256 balance = token.balanceOf(address(this));
         if (balance <= 0) return false;
-        token.safeTransfer(to, balance);
+        token.safeTransfer(_to, balance);
         return true;
     }
 }

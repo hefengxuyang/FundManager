@@ -16,7 +16,7 @@ import "./interfaces/master/IPancakeMaster.sol";
  * @title Fund Controller
  * @author yang
  * @notice This contract handles deposits to and withdrawals from the liquidity pools.
- * 1、 管理员管理，合约版本升级配置
+ * 1、 管理员管理
  * 2、 调仓管理
  * 3、 仓位查询
  */
@@ -183,5 +183,14 @@ contract FundController is Ownable {
         else if (pool == LiquidityPool.MdexPool) (amount,) = IMdexMaster(master).userInfo(pid, address(this));
         else if (pool == LiquidityPool.PancakePool) (amount,) = IPancakeMaster(master).userInfo(pid, address(this));
         else revert("Invalid pool index.");
+    }
+
+    // 转出基金经理丢失的流动性代币，以防意外操作将资金转移到本合约
+    function forwardLostFunds(address _token, address _to) external onlyOwner returns (bool) {
+        IERC20 token = IERC20(_token);
+        uint256 balance = token.balanceOf(address(this));
+        if (balance <= 0) return false;
+        token.safeTransfer(_to, balance);
+        return true;
     }
 }
