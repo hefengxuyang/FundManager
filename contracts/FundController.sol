@@ -53,10 +53,9 @@ contract FundController is Ownable {
     event WithdrawFromPool(address _pair, uint256 _amount);
     event Rebalance(uint256 _oldLiquity, uint256 _newLiquity);
 
-    constructor(address _migrator) public {
+    constructor() public {
         governance = msg.sender;
         rebalancer = msg.sender;
-        migrator = _migrator;
 
         addSupportedMaster(BAKERY_MASTER_CONTRACT, LiquidityPool.BakeryPool);
         // addSupportedMaster(MDEX_MASTER_CONTRACT, LiquidityPool.MdexPool);
