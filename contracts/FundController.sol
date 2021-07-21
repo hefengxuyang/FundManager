@@ -37,7 +37,7 @@ contract FundController is Ownable {
     mapping(address => LiquidityPool) public masterPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
     mapping(address => address) public pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
     mapping(address => uint256) public pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
-    mapping(address => bool) public PairTokenExists;        // 挖矿流动性合约池中的交易对和 是否存在(exist) 的映射关系
+    mapping(address => bool) public pairTokenExists;        // 挖矿流动性合约池中的交易对和 是否存在(exist) 的映射关系
 
     address constant private BAKERY_MASTER_CONTRACT = 0xe17cF95Bd55F749ed56c76193AaafF99422b7487;
     // address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
@@ -48,7 +48,7 @@ contract FundController is Ownable {
     event FundMigratorSet(address _migrator);
     event FundManagerSet(address _fundManager);
 
-    event ApproveToPool(address _pair, uint256 _amount);
+    event ApproveTo(address _token, address _receiver, uint256 _amount);
     event DepositToPool(address _pair, uint256 _amount);
     event WithdrawFromPool(address _pair, uint256 _amount);
     event Rebalance(uint256 _oldLiquity, uint256 _newLiquity);
@@ -71,9 +71,9 @@ contract FundController is Ownable {
     }
 
     function addSupportedPair(address _pair, address _master, uint256 _pid) internal {
-        require(!PairTokenExists[_pair], "Liquity pair token has exists.");
+        require(!pairTokenExists[_pair], "Liquity pair token has exists.");
         supportedPairs.push(_pair);
-        PairTokenExists[_pair] = true;
+        pairTokenExists[_pair] = true;
         pairMasters[_pair] = _master;
         pairPids[_pair] = _pid;
     }
@@ -89,7 +89,7 @@ contract FundController is Ownable {
     }
 
     modifier onlyFundManager() {
-        require(fundManager == msg.sender, "Caller is not the FundManager.");
+        require(fundManager == msg.sender, "Caller is not the fundManager.");
         _;
     }
 
@@ -113,26 +113,36 @@ contract FundController is Ownable {
         emit FundManagerSet(_fundManager);
     }
 
-    // 管理员操作的approve
-    function approveToPool(address _pair, uint256 _amount) external onlyGovernance {
-        require(_pair != address(0), "Invalid LP contract.");
-        address master = pairMasters[_pair];
-        require(master != address(0), "Invalid master contract.");
-        IERC20 pairToken = IERC20(_pair);
-        uint256 allowance = pairToken.allowance(address(this), master);
+    // 同意ERC20合约的安全转账操作approve(内部函数)
+    function approveTo(address _token, address _receiver, uint256 _amount) internal {
+        require(_token != address(0), "Invalid erc20 token contract.");
+        IERC20 token = IERC20(_token);
+        uint256 allowance = token.allowance(address(this), _receiver);
         if (allowance == _amount) 
             return;
 
         if (_amount > 0 && allowance > 0) 
-            pairToken.approve(master, 0);
+            token.approve(_receiver, 0);
 
-        pairToken.approve(master, _amount);
-        emit ApproveToPool(_pair, _amount);
+        token.approve(_receiver, _amount);
+        emit ApproveTo(_token, _receiver, _amount);
+    }
+
+    // 同意对流动性挖矿合约的approve
+    function approveToMaster(address _pair, uint256 _amount) external onlyGovernance {
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
+        address master = pairMasters[_pair];
+        approveTo(_pair, master, _amount);
+    }
+
+    // 同意对流动性挖矿合约的approve
+    function approveToManager(address _token, uint256 _amount) external onlyGovernance {
+        approveTo(_token, fundManager, _amount);
     }
 
     // 存储到挖矿池中(内部函数)
     function _depositToPool(address _pair, uint256 _amount) internal {
-        require(_pair != address(0), "Invalid LP contract.");
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
         uint256 pid = pairPids[_pair];
@@ -155,7 +165,7 @@ contract FundController is Ownable {
 
     // 从挖矿池中提现(内部函数)
     function _withdrawFromPool(address _pair, uint256 _amount) internal {
-        require(_pair != address(0), "Invalid LP contract.");
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
         uint256 pid = pairPids[_pair];
@@ -178,7 +188,7 @@ contract FundController is Ownable {
 
     // 挖矿调仓
     function rebalance(address _oldPair, address _newPair, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
-        require(_oldPair != address(0) || _newPair != address(0), "Invalid LP contract.");
+        require(_oldPair != address(0) || _newPair != address(0), "Invalid liquity pair contract.");
         address oldFactory = ISwapV2Pair(_oldPair).factory();
         address newFactory = ISwapV2Pair(_oldPair).factory();
         newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldPair, _newPair, _liquidity, _deadline);
@@ -193,7 +203,7 @@ contract FundController is Ownable {
 
     // 查询待领取的奖励金额
     function getPoolReward(address _pair) public view returns (uint256) {
-        require(_pair != address(0), "Invalid LP contract.");
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
         uint256 pid = pairPids[_pair];
@@ -205,7 +215,7 @@ contract FundController is Ownable {
 
     // 查询已存入挖矿的流动性代币本金数量
     function getPoolPrincipal(address _pair) public view returns (uint256 amount) {
-        require(_pair != address(0), "Invalid LP contract.");
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
         uint256 pid = pairPids[_pair];

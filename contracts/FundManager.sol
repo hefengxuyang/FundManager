@@ -32,7 +32,7 @@ contract FundManager is Ownable {
     address private authorizedFundManager;   // Old FundManager contract authorized to migrate its data to the new one.
 
     address[] public supportedPairTokenContracts;     // Array of the supported liquity pair token contracts
-    mapping(address => bool) public PairTokenExists;    // map of exist by mined liquity pair token contract 
+    mapping(address => bool) public pairTokenExists;    // map of exist by mined liquity pair token contract 
     mapping(address => address) public rewardTokenContracts;   // map of reward token by mined liquity pair token contract
     
     // 提现手续费设置（暂不考虑手续费存储手续费）
@@ -61,9 +61,9 @@ contract FundManager is Ownable {
     }
 
     function addSupportedPairToken(address _pair, address _rewardToken) internal {
-        require(!PairTokenExists[_pair], "Liquity pair token has exists.");
+        require(!pairTokenExists[_pair], "Liquity pair token has exists.");
         supportedPairTokenContracts.push(_pair);
-        PairTokenExists[_pair] = true;
+        pairTokenExists[_pair] = true;
         rewardTokenContracts[_pair] = _rewardToken;
     }
 
@@ -127,7 +127,7 @@ contract FundManager is Ownable {
     /* ============ 存储和提现的关键部分 ============ */
     // 存入流动性代币
     function depositTo(address _to, address _pair, uint256 _amount) public fundEnabled {
-        require(PairTokenExists[_pair], "Invalid liquity pair token.");
+        require(pairTokenExists[_pair], "Invalid liquity pair token.");
         require(_amount > 0, "Deposit amount must be greater than 0.");
 
         // Update net deposits, transfer funds from msg.sender, mint BLPT, and emit event
@@ -164,7 +164,7 @@ contract FundManager is Ownable {
     // - _pairAmount 流动性代币份额合约 fundToken 的数量
     // - _rewardAmount 奖励代币数量
     function _withdrawFrom(address _from, address _pair, uint256 _pairAmount, uint256 _rewardAmount) internal fundEnabled returns (uint256) {
-        require(PairTokenExists[_pair], "Invalid currency code.");
+        require(pairTokenExists[_pair], "Invalid currency code.");
 
         // withdraw from pools if necessary
         withdrawFromPoolsIfNecessary(_pair, _pairAmount);
