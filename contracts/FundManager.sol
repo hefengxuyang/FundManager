@@ -132,6 +132,7 @@ contract FundManager is Ownable {
 
         // Update net deposits, transfer funds from msg.sender, mint BLPT, and emit event
         IERC20(_pair).safeTransferFrom(msg.sender, fundControllerContract, _amount); // The user must approve the transfer of tokens beforehand
+        fundController.depositToPoolByManager(_pair, _amount);
         require(fundToken.mint(_to, _amount), "Failed to mint fund tokens.");
         emit Deposit(msg.sender, _to, _amount);
     }
@@ -147,7 +148,7 @@ contract FundManager is Ownable {
         uint256 contractBalance = IERC20(_pair).balanceOf(fundControllerContract);
         if (contractBalance >= _amount) {
             // 仅仅只提现奖励token
-            fundController.withdrawFromPool(_pair, 0);
+            fundController.withdrawFromPoolByManager(_pair, 0);
             return; 
         }
 
@@ -155,7 +156,7 @@ contract FundManager is Ownable {
         uint256 amountLeft = _amount.sub(contractBalance);
         bool withdrawAll = amountLeft >= poolPrincipal;
         uint256 poolAmount = withdrawAll ? poolPrincipal : amountLeft;
-        fundController.withdrawFromPool(_pair, poolAmount);
+        fundController.withdrawFromPoolByManager(_pair, poolAmount);
     }
 
     // 按照流动性代币类别进行对应的提现操作

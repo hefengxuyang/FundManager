@@ -29,6 +29,7 @@ contract FundController is Ownable {
     address public governance;  // 治理（管理员）地址
     address public rebalancer;  // 策略调度员地址
     address public migrator;    // 迁移合约地址
+    address public fundManager; // FundManager 管理合约地址
 
     address[] public supportedPairs;
 
@@ -42,14 +43,15 @@ contract FundController is Ownable {
     // address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
     address constant private PANCAKE_MASTER_CONTRACT = 0x55fC7a3117107adcAE6C6a5b06E69b99C3fa4113;
 
-    event FundGovernanceSet(address newAddress);
-    event FundRebalancerSet(address newAddress);
-    event FundMigratorSet(address newAddress);
+    event FundGovernanceSet(address _governance);
+    event FundRebalancerSet(address _rebalancer);
+    event FundMigratorSet(address _migrator);
+    event FundManagerSet(address _fundManager);
 
-    event ApproveToPool(address erc20Contract, uint256 amount);
-    event DepositToPool(address erc20Contract, uint256 amount);
-    event WithdrawFromPool(address erc20Contract, uint256 amount);
-    event Rebalance(uint256 oldLiquity, uint256 newLiquity);
+    event ApproveToPool(address _pair, uint256 _amount);
+    event DepositToPool(address _pair, uint256 _amount);
+    event WithdrawFromPool(address _pair, uint256 _amount);
+    event Rebalance(uint256 _oldLiquity, uint256 _newLiquity);
 
     constructor(address _migrator) public {
         governance = msg.sender;
@@ -87,13 +89,17 @@ contract FundController is Ownable {
         _;
     }
 
+    modifier onlyFundManager() {
+        require(fundManager == msg.sender, "Caller is not the FundManager.");
+        _;
+    }
+
     function setGovernance(address _governance) external onlyOwner {
         governance = _governance;
         emit FundGovernanceSet(_governance);
     }
 
     function setRebalancer(address _rebalancer) external onlyGovernance {
-        require(rebalancer != _rebalancer, "The same rebalancer.");
         rebalancer = _rebalancer;
         emit FundRebalancerSet(_rebalancer);
     }
@@ -101,6 +107,11 @@ contract FundController is Ownable {
     function setMigrator(address _migrator) external onlyGovernance {
         migrator = _migrator;
         emit FundMigratorSet(_migrator);
+    }
+
+    function setFundManager(address _fundManager) external onlyGovernance {
+        fundManager = _fundManager;
+        emit FundManagerSet(_fundManager);
     }
 
     // 管理员操作的approve
@@ -120,8 +131,8 @@ contract FundController is Ownable {
         emit ApproveToPool(_pair, _amount);
     }
 
-    // 管理员操作的存储
-    function depositToPool(address _pair, uint256 _amount) external onlyRebalancer {
+    // 存储到挖矿池中(内部函数)
+    function _depositToPool(address _pair, uint256 _amount) internal {
         require(_pair != address(0), "Invalid LP contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
@@ -133,8 +144,18 @@ contract FundController is Ownable {
         emit DepositToPool(_pair, _amount);
     }
 
-    // 管理员操作的提现
-    function withdrawFromPool(address _pair, uint256 _amount) external onlyRebalancer {
+    // 调度员操作的存储
+    function depositToPool(address _pair, uint256 _amount) external onlyRebalancer {
+        _depositToPool(_pair, _amount);
+    }
+
+    // 管理员(FundManger)操作的存储
+    function depositToPoolByManager(address _pair, uint256 _amount) external onlyFundManager {
+        _depositToPool(_pair, _amount);
+    }
+
+    // 从挖矿池中提现(内部函数)
+    function _withdrawFromPool(address _pair, uint256 _amount) internal {
         require(_pair != address(0), "Invalid LP contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
@@ -144,6 +165,16 @@ contract FundController is Ownable {
         else if (pool == LiquidityPool.PancakePool) IPancakeMaster(master).withdraw(pid, _amount);
         else revert("Invalid pool index.");
         emit WithdrawFromPool(_pair, _amount);
+    }
+
+    // 调度员操作的提现
+    function withdrawFromPool(address _pair, uint256 _amount) external onlyRebalancer {
+        _withdrawFromPool(_pair, _amount);
+    }
+
+    // 管理员(FundManger)操作的提现
+    function withdrawFromPoolByManager(address _pair, uint256 _amount) external onlyFundManager {
+        _withdrawFromPool(_pair, _amount);
     }
 
     // 挖矿调仓
