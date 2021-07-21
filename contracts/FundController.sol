@@ -36,6 +36,7 @@ contract FundController is Ownable {
     enum LiquidityPool { BakeryPool, MdexPool, PancakePool }
     mapping(address => LiquidityPool) public masterPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
     mapping(address => address) public pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
+    mapping(address => address) public pairRouters;         // 挖矿流动性合约池中的交易对和 router 的映射关系
     mapping(address => uint256) public pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
     mapping(address => bool) public pairTokenExists;        // 挖矿流动性合约池中的交易对和 是否存在(exist) 的映射关系
 
@@ -61,20 +62,21 @@ contract FundController is Ownable {
         // addSupportedMaster(MDEX_MASTER_CONTRACT, LiquidityPool.MdexPool);
         addSupportedMaster(PANCAKE_MASTER_CONTRACT, LiquidityPool.PancakePool);
 
-        addSupportedPair(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, BAKERY_MASTER_CONTRACT, 0);
-        // addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 1);
-        addSupportedPair(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, PANCAKE_MASTER_CONTRACT, 1);
+        addSupportedPair(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, BAKERY_MASTER_CONTRACT, 0xf716059b58E95De36635500c2c23761A89A95497, 0);
+        // addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 0x96C5D20b2a975c050e4220BE276ACe4892f4b41A, 1);
+        addSupportedPair(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, PANCAKE_MASTER_CONTRACT, 0x7F67a7b681f3655C1b247068a9C977EcdeDd0768, 1);
     }
 
     function addSupportedMaster(address _master, LiquidityPool _pool) internal {
         masterPools[_master] = _pool;
     }
 
-    function addSupportedPair(address _pair, address _master, uint256 _pid) internal {
+    function addSupportedPair(address _pair, address _master, address _router, uint256 _pid) internal {
         require(!pairTokenExists[_pair], "Liquity pair token has exists.");
         supportedPairs.push(_pair);
         pairTokenExists[_pair] = true;
         pairMasters[_pair] = _master;
+        pairRouters[_pair] = _router;
         pairPids[_pair] = _pid;
     }
 
@@ -114,7 +116,7 @@ contract FundController is Ownable {
     }
 
     // 同意ERC20合约的安全转账操作approve(内部函数)
-    function _approveTo(address _token, address _receiver, uint256 _amount) internal {
+    function approveTo(address _token, address _receiver, uint256 _amount) public onlyGovernance {
         require(_token != address(0), "Invalid erc20 token contract.");
         IERC20 token = IERC20(_token);
         uint256 allowance = token.allowance(address(this), _receiver);
@@ -129,15 +131,15 @@ contract FundController is Ownable {
     }
 
     // 同意对流动性挖矿合约的approve
-    function approveToMaster(address _pair, uint256 _amount) external onlyGovernance {
+    function approveToMaster(address _pair, uint256 _amount) external {
         require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
-        _approveTo(_pair, master, _amount);
+        approveTo(_pair, master, _amount);
     }
 
     // 同意对流动性挖矿合约的approve
-    function approveToManager(address _token, uint256 _amount) external onlyGovernance {
-        _approveTo(_token, fundManager, _amount);
+    function approveToManager(address _token, uint256 _amount) external {
+        approveTo(_token, fundManager, _amount);
     }
 
     // 存储到挖矿池中(内部函数)
@@ -188,10 +190,12 @@ contract FundController is Ownable {
 
     // 挖矿调仓
     function rebalance(address _oldPair, address _newPair, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
-        require(_oldPair != address(0) || _newPair != address(0), "Invalid liquity pair contract.");
-        address oldFactory = ISwapV2Pair(_oldPair).factory();
-        address newFactory = ISwapV2Pair(_oldPair).factory();
-        newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldPair, _newPair, _liquidity, _deadline);
+        require(pairTokenExists[_oldPair] && pairTokenExists[_newPair], "Invalid liquity pair contract.");
+        address oldRouter = pairRouters[_oldPair];
+        address newRouter = pairRouters[_newPair];
+        address token0 = ISwapV2Pair(_oldPair).token0();
+        address token1 = ISwapV2Pair(_oldPair).token1();
+        newLiquidity = IMigrator(migrator).migrate(oldRouter, newRouter, token0, token1, _liquidity, _deadline);
         emit Rebalance(_liquidity, newLiquidity);
     }
 
