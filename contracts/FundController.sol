@@ -114,7 +114,7 @@ contract FundController is Ownable {
     }
 
     // 同意ERC20合约的安全转账操作approve(内部函数)
-    function approveTo(address _token, address _receiver, uint256 _amount) internal {
+    function _approveTo(address _token, address _receiver, uint256 _amount) internal {
         require(_token != address(0), "Invalid erc20 token contract.");
         IERC20 token = IERC20(_token);
         uint256 allowance = token.allowance(address(this), _receiver);
@@ -132,12 +132,12 @@ contract FundController is Ownable {
     function approveToMaster(address _pair, uint256 _amount) external onlyGovernance {
         require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
-        approveTo(_pair, master, _amount);
+        _approveTo(_pair, master, _amount);
     }
 
     // 同意对流动性挖矿合约的approve
     function approveToManager(address _token, uint256 _amount) external onlyGovernance {
-        approveTo(_token, fundManager, _amount);
+        _approveTo(_token, fundManager, _amount);
     }
 
     // 存储到挖矿池中(内部函数)
