@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 import "./interfaces/IMigrator.sol";
+import "./interfaces/swap/ISwapV2Pair.sol";
 import "./interfaces/master/IBakeryMaster.sol";
 import "./interfaces/master/IMdexMaster.sol";
 import "./interfaces/master/IPancakeMaster.sol";
@@ -29,13 +30,13 @@ contract FundController is Ownable {
     address public rebalancer;  // 策略调度员地址
     address public migrator;    // 迁移合约地址
 
-    address[] private supportedPairs;
+    address[] public supportedPairs;
 
     enum LiquidityPool { BakeryPool, MdexPool, PancakePool }
-    mapping(address => LiquidityPool) private masterPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
-    mapping(address => address) private masterFactorys;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
-    mapping(address => address) private pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
-    mapping(address => uint256) private pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
+    mapping(address => LiquidityPool) public masterPools;   // 挖矿流动性合约池和 LiquidityPool 的映射关系
+    mapping(address => address) public pairMasters;         // 挖矿流动性合约池中的交易对和 master 的映射关系
+    mapping(address => uint256) public pairPids;            // 挖矿流动性合约池中的交易对和 pid 的映射关系
+    mapping(address => bool) public PairTokenExists;        // 挖矿流动性合约池中的交易对和 是否存在(exist) 的映射关系
 
     address constant private BAKERY_MASTER_CONTRACT = 0xe17cF95Bd55F749ed56c76193AaafF99422b7487;
     // address constant private MDEX_MASTER_CONTRACT = 0xe2f2a5C287993345a840Db3B0845fbC70f5935a5;
@@ -55,22 +56,23 @@ contract FundController is Ownable {
         rebalancer = msg.sender;
         migrator = _migrator;
 
-        addSupportedMaster(BAKERY_MASTER_CONTRACT, 0x299BA37df581B5f331b0645869DdAEC601070800, LiquidityPool.BakeryPool);
-        // addSupportedMaster(MDEX_MASTER_CONTRACT, 0x398eC7346DcD622eDc5ae82352F02bE94C62d119, LiquidityPool.MdexPool);
-        addSupportedMaster(PANCAKE_MASTER_CONTRACT, 0x1076162c161f78a0495944E1D18220d7222BA44e, LiquidityPool.PancakePool);
+        addSupportedMaster(BAKERY_MASTER_CONTRACT, LiquidityPool.BakeryPool);
+        // addSupportedMaster(MDEX_MASTER_CONTRACT, LiquidityPool.MdexPool);
+        addSupportedMaster(PANCAKE_MASTER_CONTRACT, LiquidityPool.PancakePool);
 
         addSupportedPair(0x7BDa39b1B4cD4010836E7FC48cb6B817EEcFa94E, BAKERY_MASTER_CONTRACT, 0);
         // addSupportedPair(0x6B175474E89094C44Da98b954EedeAC495271d0F, MDEX_MASTER_CONTRACT, 1);
         addSupportedPair(0x1F53f4972AAc7985A784C84f739Be4d73FB6d14f, PANCAKE_MASTER_CONTRACT, 1);
     }
 
-    function addSupportedMaster(address _master, address _factory, LiquidityPool _pool) internal {
-        masterFactorys[_master] = _factory;
+    function addSupportedMaster(address _master, LiquidityPool _pool) internal {
         masterPools[_master] = _pool;
     }
 
     function addSupportedPair(address _pair, address _master, uint256 _pid) internal {
+        require(!PairTokenExists[_pair], "Liquity pair token has exists.");
         supportedPairs.push(_pair);
+        PairTokenExists[_pair] = true;
         pairMasters[_pair] = _master;
         pairPids[_pair] = _pid;
     }
@@ -147,10 +149,8 @@ contract FundController is Ownable {
     // 挖矿调仓
     function rebalance(address _oldPair, address _newPair, uint256 _liquidity, uint256 _deadline) external onlyRebalancer returns (uint256 newLiquidity) {
         require(_oldPair != address(0) || _newPair != address(0), "Invalid LP contract.");
-        address oldMaster = pairMasters[_oldPair];
-        address newMaster = pairMasters[_newPair];
-        address oldFactory = masterFactorys[oldMaster];
-        address newFactory = masterFactorys[newMaster];
+        address oldFactory = ISwapV2Pair(_oldPair).factory();
+        address newFactory = ISwapV2Pair(_oldPair).factory();
         newLiquidity = IMigrator(migrator).migrate(oldFactory, newFactory, _oldPair, _newPair, _liquidity, _deadline);
         emit Rebalance(_liquidity, newLiquidity);
     }

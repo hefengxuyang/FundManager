@@ -32,7 +32,7 @@ contract FundManager is Ownable {
     address private authorizedFundManager;   // Old FundManager contract authorized to migrate its data to the new one.
 
     address[] public supportedPairTokenContracts;     // Array of the supported liquity pair token contracts
-    mapping(address => bool) public PairTokenExists;
+    mapping(address => bool) public PairTokenExists;    // map of exist by mined liquity pair token contract 
     mapping(address => address) public rewardTokenContracts;   // map of reward token by mined liquity pair token contract
     
     // 提现手续费设置（暂不考虑手续费存储手续费）
@@ -61,6 +61,7 @@ contract FundManager is Ownable {
     }
 
     function addSupportedPairToken(address _pair, address _rewardToken) internal {
+        require(!PairTokenExists[_pair], "Liquity pair token has exists.");
         supportedPairTokenContracts.push(_pair);
         PairTokenExists[_pair] = true;
         rewardTokenContracts[_pair] = _rewardToken;
