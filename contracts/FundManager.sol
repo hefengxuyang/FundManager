@@ -45,8 +45,8 @@ contract FundManager is Ownable {
     event FundTokenSet(address _fundToken);    // Emitted when the FundToken of the FundManager is set.
     event FundDisabled();   // Emitted when the primary functionality of this FundManager contract has been disabled.
     event FundEnabled();    // Emitted when the primary functionality of this FundManager contract has been enabled.
-    event Deposit(address indexed _sender, address indexed _to, uint256 _amount);    // Emitted when funds have been deposited to Controller.
-    event Withdrawal(address indexed _sender, address indexed _from, uint256 _amount);  // Emitted when funds have been withdrawn from Controller.
+    event Deposit(address indexed _pair, address indexed _sender, address indexed _to, uint256 _amount);    // Emitted when funds have been deposited to Controller.
+    event Withdrawal(address indexed _pair, address indexed _sender, address indexed _from, uint256 _pairAmount, uint256 _rewardAmount);  // Emitted when funds have been withdrawn from Controller.
 
     modifier fundEnabled() {    // Throws if fund is disabled.
         require(!fundDisabled, "This fund manager contract is disabled. This may be due to an upgrade.");
@@ -134,7 +134,7 @@ contract FundManager is Ownable {
         IERC20(_pair).safeTransferFrom(msg.sender, fundControllerContract, _amount); // The user must approve the transfer of tokens beforehand
         fundController.depositToPoolByManager(_pair, _amount);
         require(fundToken.mint(_to, _amount), "Failed to mint fund tokens.");
-        emit Deposit(msg.sender, _to, _amount);
+        emit Deposit(_pair, msg.sender, _to, _amount);
     }
 
     // 调用者存入流动性代币（调用者用户需要提前 approve 对应的 amount）
@@ -147,8 +147,7 @@ contract FundManager is Ownable {
         // Check contract balance of token and withdraw from pools if necessary
         uint256 contractBalance = IERC20(_pair).balanceOf(fundControllerContract);
         if (contractBalance >= _amount) {
-            // 仅仅只提现奖励token
-            fundController.withdrawFromPoolByManager(_pair, 0);
+            fundController.withdrawFromPoolByManager(_pair, 0); // Only withdraw reward token
             return; 
         }
 
@@ -166,35 +165,37 @@ contract FundManager is Ownable {
     // - _rewardAmount 奖励代币数量
     function _withdrawFrom(address _from, address _pair, uint256 _pairAmount, uint256 _rewardAmount) internal fundEnabled returns (uint256) {
         require(PairTokenExists[_pair], "Invalid currency code.");
-        require(_pairAmount > 0, "Withdrawal amount must be greater than 0.");
 
-        // Withdraw from pools if necessary
+        // withdraw from pools if necessary
         withdrawFromPoolsIfNecessary(_pair, _pairAmount);
 
-        // Calculate withdrawal fee and amount after fee
+        // withdraw reward token
+        if (_rewardAmount > 0) {
+            IERC20 rewardToken = IERC20(rewardTokenContracts[_pair]);
+            rewardToken.safeTransferFrom(fundControllerContract, msg.sender, _rewardAmount);
+        } 
+
+        // only withdraw reward token when the amount of pair is zero
+        if (_pairAmount == 0) return uint256(0);
+
+        // calculate withdrawal fee and amount after fee
         uint256 feeAmount = _pairAmount.mul(withdrawalFeeRate).div(1e18);
         uint256 amountAfterFee = _pairAmount.sub(feeAmount);
 
+        // withdraw pair token
         fundToken.burnFrom(_from, _pairAmount); // The user must approve the burning of tokens beforehand
         IERC20 pairToken = IERC20(_pair);
         pairToken.safeTransferFrom(fundControllerContract, msg.sender, amountAfterFee);
         pairToken.safeTransferFrom(fundControllerContract, withdrawalFeeMasterBeneficiary, feeAmount);
-        if (_rewardAmount > 0){
-            IERC20 rewardToken = IERC20(rewardTokenContracts[_pair]);
-            rewardToken.safeTransferFrom(fundControllerContract, msg.sender, _rewardAmount);
-        } 
-        
-        emit Withdrawal(msg.sender, _from, _pairAmount);
-
-        // Return amount after fee
         return amountAfterFee;
     }
 
     // 根据资金控制器合约 Controller 中的持仓比例进行等比例的本金和收益提现
     function _withdrawFromPoolByProportion(address _from, uint256 _amount) internal fundEnabled returns (uint256[] memory) {
-        // Input validation
-        require(_amount > 0, "Withdrawal amount must be greater than 0.");
-        require(_amount <= fundToken.balanceOf(_from), "Your BLPT balance is less than the withdrawal amount.");
+        uint256 fromBalance = fundToken.balanceOf(_from);
+        require(_amount <= fromBalance, "Your BLPT balance is less than the withdrawal amount.");
+        bool onlyWithdrawReward = (_amount == 0);
+        uint256 calculateWithdrawAmount = onlyWithdrawReward ? fromBalance : _amount;
 
         // Proportion calculation supportedPairTokenContracts
         uint256[] memory poolPairAmounts = new uint256[](supportedPairTokenContracts.length);
@@ -211,7 +212,7 @@ contract FundManager is Ownable {
 
             // liquity pair token amount
             uint256 curPairAmount = fundController.getPoolPrincipal(curPairToken);
-            curPairAmount = curPairAmount.add(fundController.getPoolBalance(curPairToken));
+            curPairAmount = curPairAmount.add(IERC20(curPairToken).balanceOf(fundControllerContract));
             poolPairAmounts[i] = curPairAmount;
             totalPoolPairAmount = totalPoolPairAmount.add(curPairAmount);
         }
@@ -221,11 +222,14 @@ contract FundManager is Ownable {
 
         // withdraw liquity pair token and reward token
         uint256[] memory amountsAfterFees = new uint256[](supportedPairTokenContracts.length);
-        for (uint256 i = 0; i < poolPairAmounts.length; i++) {
-            uint256 curWithdrawPairAmount = _amount.mul(poolPairAmounts[i]).div(totalPoolPairAmount);
-            if (curWithdrawPairAmount == 0) continue;
-            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(poolPairAmounts[i]).div(totalPoolPairAmount);
-            amountsAfterFees[i] = _withdrawFrom(_from, supportedPairTokenContracts[i], curWithdrawPairAmount, curWithdrawRewardAmount);
+        for (uint256 i = 0; i < supportedPairTokenContracts.length; i++) {
+            uint256 poolPairAmount = poolPairAmounts[i];
+            if (poolPairAmount == 0) continue;
+            uint256 curWithdrawPairAmount = calculateWithdrawAmount.mul(poolPairAmount).div(totalPoolPairAmount);
+            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(curWithdrawPairAmount).div(poolPairAmount);
+            uint256 actualWithdrawPairAmount = onlyWithdrawReward ? 0 : curWithdrawPairAmount;
+            amountsAfterFees[i] = _withdrawFrom(_from, supportedPairTokenContracts[i], actualWithdrawPairAmount, curWithdrawRewardAmount);
+            emit Withdrawal(supportedPairTokenContracts[i], msg.sender, _from, actualWithdrawPairAmount, curWithdrawRewardAmount);
         }
 
         // Return amounts after fees

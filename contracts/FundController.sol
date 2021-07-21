@@ -186,9 +186,9 @@ contract FundController is Ownable {
     }
 
     // 查询未投资的流动性代币的余额
-    function getPoolBalance(address _pair) public view returns (uint256) {
-        require(_pair != address(0), "Invalid LP contract.");
-        return IERC20(_pair).balanceOf(address(this));
+    function getPoolBalance(address _token) public view returns (uint256) {
+        require(_token != address(0), "Invalid ERC20 token contract.");
+        return IERC20(_token).balanceOf(address(this));
     }
 
     // 查询待领取的奖励金额
