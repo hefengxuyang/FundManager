@@ -17,19 +17,17 @@
 ├── Migrations.sol
 ├── interfaces
 │   ├── IController.sol
-│   ├── IConverter.sol
 │   ├── IMigrator.sol
-│   ├── IStrategy.sol
-│   └── ISwapV2Router.sol
-├── lib
-│   ├── external
-│   │   ├── XPoolMinter.sol
-│   │   └── YPoolMinter.sol
-│   └── pools
-│       ├── XPoolController.sol
-│       └── YPoolController.sol
-├── owner
-    └── Operator.sol
+│   ├── master
+│   │   ├── IBakeryMaster.sol
+│   │   ├── IMdexMaster.sol
+│   │   └── IPancakeMaster.sol
+│   └── swap
+│       ├── ISwapV2Factory.sol
+│       ├── ISwapV2Pair.sol
+│       └── ISwapV2Router.sol
+└── owner
+    └── Operator.sol
 ```
 
 合约大致介绍如下：
@@ -81,11 +79,3 @@ ERC20合约，主要用于用户存储流动性代币的份额统计：
 
 2、用户提现对应的流动性份额，则需要销毁对应的 FundToken
 
-
-### PoolController/PoolMinter
-
-针对特定挖矿合约的库合约，用于 FundManger 和 FundController 的调度：
-
-1、将流动性代币存入到流动性挖矿合约进行挖矿
-
-2、提现流动性代币和对应的奖励份额，并计算收益
