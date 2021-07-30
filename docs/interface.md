@@ -9,14 +9,14 @@
 // 函数参数：
 //  - _pair 流动性代币，只能使用 supportedPairTokenContracts 支持的流动性代币
 //  - _amount 代币数量，默认单位 10^18
-// 注意事项：调用 depisit 之前，，必须调用流动性交易对 _pair 合约的 approve 函数，并通过对 FundManager 合约地址允许对应的数量，否则没法存储
+// 注意事项：调用 depisit 之前，必须调用流动性交易对 _pair 合约的 approve 函数，并通过对 FundManager 合约地址允许对应的数量，否则没法存储
 function deposit(address _pair, uint256 _amount) external;
 
 // 功能：调用者根据自己拥有的流动性份额代币（FundToken）进行提现操作
 // 函数参数：
 //  - _amount 流动性份额代币的数量
 //    - 0 表示仅提现挖矿的代币收益，不撤回流动性代币挖矿
-//    - 其他数额 需要少于等于 FundToken 份额代币的数量，根据用户实际选择的份额进行提现
+//    - Number 需要少于等于 FundToken 份额代币的数量，根据用户实际选择的份额进行提现
 // 注意事项：调用 withdraw 之前，必须调用 Fundtoken 流动性份额代币合约的 approve 函数，并通过对 FundManager 合约地址允许对应的数量，否则没法销毁 Fundtoken 代币
 function withdraw(uint256 _amount) external returns (uint256[] memory);
 ```
