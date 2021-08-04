@@ -24,6 +24,9 @@ function withdraw(uint256 _amount) external returns (uint256[] memory);
 ### FundController（调度员调用）
 
 ```js
+// approve 同意调用指定合约的存储和提现
+function approveTo(address _token, address _receiver, uint256 _amount) external;
+
 // approve 同意调用 Master 合约进行挖矿
 function approveToMaster(address _pair, uint256 _amount) external;
 
