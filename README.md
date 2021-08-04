@@ -17,6 +17,7 @@
 ├── Migrations.sol
 ├── interfaces
 │   ├── IController.sol
+│   ├── IManager.sol
 │   ├── IMigrator.sol
 │   ├── master
 │   │   ├── IBakeryMaster.sol
