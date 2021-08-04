@@ -116,7 +116,7 @@ contract FundController is Ownable {
     }
 
     // 同意ERC20合约的安全转账操作approve(内部函数)
-    function approveTo(address _token, address _receiver, uint256 _amount) public onlyGovernance {
+    function _approveTo(address _token, address _receiver, uint256 _amount) internal {
         require(_token != address(0), "Invalid erc20 token contract.");
         IERC20 token = IERC20(_token);
         uint256 allowance = token.allowance(address(this), _receiver);
@@ -130,16 +130,21 @@ contract FundController is Ownable {
         emit ApproveTo(_token, _receiver, _amount);
     }
 
-    // 同意对流动性挖矿合约的approve
-    function approveToMaster(address _pair, uint256 _amount) external {
-        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
-        address master = pairMasters[_pair];
-        approveTo(_pair, master, _amount);
+    // 同意对指定的接收对象调用的approve
+    function approveTo(address _token, address _receiver, uint256 _amount) external onlyGovernance {
+        _approveTo(_token, _receiver, _amount);
     }
 
     // 同意对流动性挖矿合约的approve
-    function approveToManager(address _token, uint256 _amount) external {
-        approveTo(_token, fundManager, _amount);
+    function approveToMaster(address _pair, uint256 _amount) external onlyGovernance {
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
+        address master = pairMasters[_pair];
+        _approveTo(_pair, master, _amount);
+    }
+
+    // 同意对资产管理合约调用的approve
+    function approveToManager(address _token, uint256 _amount) external onlyGovernance {
+        _approveTo(_token, fundManager, _amount);
     }
 
     // 存储到挖矿池中(内部函数)
@@ -200,13 +205,13 @@ contract FundController is Ownable {
     }
 
     // 查询未投资的流动性代币的余额
-    function getPoolBalance(address _token) public view returns (uint256) {
+    function getPoolBalance(address _token) external view returns (uint256) {
         require(_token != address(0), "Invalid ERC20 token contract.");
         return IERC20(_token).balanceOf(address(this));
     }
 
     // 查询待领取的奖励金额
-    function getPoolReward(address _pair) public view returns (uint256) {
+    function getPoolReward(address _pair) external view returns (uint256) {
         require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
@@ -218,7 +223,7 @@ contract FundController is Ownable {
     }
 
     // 查询已存入挖矿的流动性代币本金数量
-    function getPoolPrincipal(address _pair) public view returns (uint256 amount) {
+    function getPoolPrincipal(address _pair) external view returns (uint256 amount) {
         require(pairTokenExists[_pair], "Invalid liquity pair contract.");
         address master = pairMasters[_pair];
         LiquidityPool pool = masterPools[master];
@@ -227,5 +232,15 @@ contract FundController is Ownable {
         else if (pool == LiquidityPool.MdexPool) (amount,) = IMdexMaster(master).userInfo(pid, address(this));
         else if (pool == LiquidityPool.PancakePool) (amount,) = IPancakeMaster(master).userInfo(pid, address(this));
         else revert("Invalid pool index.");
+    }
+
+    // 转出误存或流动性迁移误差的的ERC20代币(除了本合约管理的pair交易对代币)，以防意外操作将资金转移到本合约
+    function forwardLostFunds(address _token, address _to) external onlyOwner returns (bool) {
+        require(!pairTokenExists[_token], "Forward lost fund must not be pair token.");
+        IERC20 token = IERC20(_token);
+        uint256 balance = token.balanceOf(address(this));
+        if (balance <= 0) return false;
+        token.safeTransfer(_to, balance);
+        return true;
     }
 }

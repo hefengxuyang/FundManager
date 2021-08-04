@@ -241,7 +241,7 @@ contract FundManager is Ownable {
         return _withdrawFromPoolByProportion(msg.sender, _amount);
     }
 
-    // 转出基金经理丢失的流动性代币，以防意外操作将资金转移到本合约
+    // 转出误存的ERC20代币，以防意外操作将资金转移到本合约
     function forwardLostFunds(address _token, address _to) external onlyOwner returns (bool) {
         IERC20 token = IERC20(_token);
         uint256 balance = token.balanceOf(address(this));
