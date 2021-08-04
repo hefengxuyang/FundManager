@@ -60,9 +60,10 @@ function getPoolPrincipal(address _pair) public view returns (uint256 amount);
 
 ## 测试合约信息
 
+```js
 FundController: 0x640ab84C143e841784B220c76b0d7476982E46F4
 FundManager: 0x7C5981565331E698bCCB54aDc7Ac531F7C94bD02
 FundToken: 0x53d8Ccf38134cE0960Ef709b125368381e824f78
 FundMigrator: 0x72919d7E67D043bE569DED8Ba413B5c025C2E034
-
+```
 
