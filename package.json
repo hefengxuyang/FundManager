@@ -22,5 +22,10 @@
     "truffle-contract-size": "^2.0.1",
     "truffle-flattener": "^1.5.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "tar": ">=4.4.15",
+    "node-fetch": ">=2.6.1",
+    "yargs-parser": ">=13.1.2",
+    "mem": ">=4.0.0"
+  }
 }
