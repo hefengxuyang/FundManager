@@ -147,6 +147,11 @@ contract FundController is Ownable {
         _approveTo(_token, fundManager, _amount);
     }
 
+    // 同意对迁移转换合约Migrator调用的approve
+    function approveToMigrator(address _token, uint256 _amount) external onlyGovernance {
+        _approveTo(_token, migrator, _amount);
+    }
+
     // 存储到挖矿池中(内部函数)
     function _depositToPool(address _pair, uint256 _amount) internal {
         require(pairTokenExists[_pair], "Invalid liquity pair contract.");
