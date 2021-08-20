@@ -8,6 +8,8 @@ interface IPancakeMaster {
 
     function emergencyWithdraw(uint256 _pid) external;
 
+    function cake() external view returns (address);
+
     function pendingCake(uint256 _pid, address _user) external view returns (uint256);
 
     function userInfo(uint256 _pid, address _user) external view returns (uint256, uint256);

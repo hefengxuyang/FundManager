@@ -210,9 +210,20 @@ contract FundController is Ownable {
     }
 
     // 查询未投资的流动性代币的余额
-    function getPoolBalance(address _token) external view returns (uint256) {
+    function getTokenBalance(address _token) external view returns (uint256) {
         require(_token != address(0), "Invalid ERC20 token contract.");
         return IERC20(_token).balanceOf(address(this));
+    }
+
+    // 查询挖矿的奖励代币合约地址
+    function getRewardToken(address _pair) external view returns (address) {
+        require(pairTokenExists[_pair], "Invalid liquity pair contract.");
+        address master = pairMasters[_pair];
+        LiquidityPool pool = masterPools[master];
+        if (pool == LiquidityPool.BakeryPool) return IBakeryMaster(master).bake();
+        else if (pool == LiquidityPool.MdexPool) return IMdexMaster(master).mdx();
+        else if (pool == LiquidityPool.PancakePool) return IPancakeMaster(master).cake();
+        else revert("Invalid pool index.");
     }
 
     // 查询待领取的奖励金额

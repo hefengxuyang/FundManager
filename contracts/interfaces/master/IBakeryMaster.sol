@@ -8,6 +8,8 @@ interface IBakeryMaster {
 
     function emergencyWithdraw(address _pair) external;
 
+    function bake() external view returns (address);
+
     function pendingBake(address _pair, address _user) external view returns (uint256);
 
     function poolUserInfoMap(address _pair, address _user) external view returns (uint256, uint256);

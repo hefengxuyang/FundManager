@@ -8,6 +8,8 @@ interface IMdexMaster {
 
     function emergencyWithdraw(uint256 _pid) external;
 
+    function mdx() external view returns (address);
+
     function pending(uint256 _pid, address _user) external view returns (uint256);
 
     function userInfo(uint256 _pid, address _user) external view returns (uint256, uint256);
