@@ -164,7 +164,8 @@ contract FundManager is Ownable {
     // - _pairAmount 流动性代币份额合约 fundToken 的数量
     // - _rewardAmount 奖励代币数量
     function _withdrawFrom(address _from, address _pair, uint256 _pairAmount, uint256 _rewardAmount) internal fundEnabled returns (uint256) {
-        require(pairTokenExists[_pair], "Invalid currency code.");
+        require(pairTokenExists[_pair], "Invalid liquity pair token.");
+        require(_pairAmount != 0 || _rewardAmount != 0, "Both withdrawal principal and reward amount is zero.");
 
         // withdraw from pools if necessary
         withdrawFromPoolsIfNecessary(_pair, _pairAmount);
@@ -203,10 +204,10 @@ contract FundManager is Ownable {
         uint256 totalPoolPairAmount = 0;
         for (uint256 i = 0; i < supportedPairTokenContracts.length; i++) {
             address curPairToken = supportedPairTokenContracts[i];
-            uint256 curRewardAmount = fundController.getPoolReward(curPairToken);
-
-            // reward token amount
             address curRewardToken = rewardTokenContracts[curPairToken];
+            
+            // reward token amount
+            uint256 curRewardAmount = fundController.getPoolReward(curPairToken);
             curRewardAmount = curRewardAmount.add(IERC20(curRewardToken).balanceOf(fundControllerContract));
             poolRewardAmounts[i] = curRewardAmount;
 
@@ -221,16 +222,21 @@ contract FundManager is Ownable {
         require(totalPoolPairAmount > 0, "Total LP amount is empty.");
 
         // withdraw liquity pair token and reward token
+        bool enableWithdrawFlag = false;
         uint256[] memory amountsAfterFees = new uint256[](supportedPairTokenContracts.length);
         for (uint256 i = 0; i < supportedPairTokenContracts.length; i++) {
-            uint256 poolPairAmount = poolPairAmounts[i];
-            if (poolPairAmount == 0) continue;
-            uint256 curWithdrawPairAmount = calculateWithdrawAmount.mul(poolPairAmount).div(totalPoolPairAmount);
-            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(curWithdrawPairAmount).div(poolPairAmount);
+            if (poolPairAmounts[i] == 0) continue;
+            uint256 curWithdrawPairAmount = calculateWithdrawAmount.mul(poolPairAmounts[i]).div(totalPoolPairAmount);
+            uint256 curWithdrawRewardAmount = poolRewardAmounts[i].mul(curWithdrawPairAmount).div(poolPairAmounts[i]);
             uint256 actualWithdrawPairAmount = onlyWithdrawReward ? 0 : curWithdrawPairAmount;
+            if (actualWithdrawPairAmount == 0 && curWithdrawRewardAmount == 0) continue;
             amountsAfterFees[i] = _withdrawFrom(_from, supportedPairTokenContracts[i], actualWithdrawPairAmount, curWithdrawRewardAmount);
+            enableWithdrawFlag = true;
             emit Withdrawal(supportedPairTokenContracts[i], msg.sender, _from, actualWithdrawPairAmount, curWithdrawRewardAmount);
         }
+
+        // validate if the total amount is zero
+        require(enableWithdrawFlag, "Unable withdraw from pool, because the share amount is too small.");
 
         // Return amounts after fees
         return amountsAfterFees;
